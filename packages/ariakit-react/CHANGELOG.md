@@ -1,5 +1,10 @@
 # @ariakit/react
 
+## 0.4.2
+
+- Improved JSDocs.
+- Updated dependencies: `@ariakit/react-core@0.4.2`
+
 ## 0.4.1
 
 ### New `autoSelect` mode
