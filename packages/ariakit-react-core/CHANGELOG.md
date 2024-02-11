@@ -1,5 +1,11 @@
 # @ariakit/react-core
 
+## 0.4.2
+
+- Added `SelectValue` component to `@ariakit/react-core`.
+- Improved JSDocs.
+- Updated dependencies: `@ariakit/core@0.4.2`
+
 ## 0.4.1
 
 ### New `autoSelect` mode
