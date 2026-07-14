@@ -20,6 +20,7 @@ import {
   shift,
   size,
 } from "@floating-ui/dom";
+import type { Padding } from "@floating-ui/dom";
 import type { ElementType, HTMLAttributes } from "react";
 import { useRef, useState } from "react";
 import type { DialogOptions } from "../dialog/dialog.tsx";
@@ -275,9 +276,17 @@ export const usePopover = createHook<TagName, PopoverOptions>(
     useSafeLayoutEffect(() => {
       if (!popoverElement?.isConnected) return;
 
+      // The CSS variable is a single value used in horizontal width `calc()`
+      // expressions, so an object padding is reduced to its largest horizontal
+      // (left/right) side.
+      const overflowPaddingValue =
+        typeof overflowPadding === "number"
+          ? overflowPadding
+          : Math.max(overflowPadding.left ?? 0, overflowPadding.right ?? 0);
+
       popoverElement.style.setProperty(
         "--popover-overflow-padding",
-        `${overflowPadding}px`,
+        `${overflowPaddingValue}px`,
       );
 
       const anchor = getAnchorElement(anchorElement, getAnchorRectProp);
@@ -649,15 +658,18 @@ export interface PopoverOptions<
    */
   arrowPadding?: number;
   /**
-   * The minimum padding between the popover and the viewport edge. This will be
-   * exposed to CSS as
-   * [`--popover-overflow-padding`](https://ariakit.com/guide/styling#--popover-overflow-padding).
+   * The minimum padding between the popover and the viewport edge. Either a
+   * single number applied to all sides, or an object specifying padding per
+   * side (`top`, `right`, `bottom`, `left`). This will be exposed to CSS as
+   * [`--popover-overflow-padding`](https://ariakit.com/guide/styling#--popover-overflow-padding)
+   * (the maximum of the horizontal `left`/`right` values when an object is
+   * passed).
    *
    * Live examples:
    * - [Sliding Menu](https://ariakit.com/examples/menu-slide)
    * @default 8
    */
-  overflowPadding?: number;
+  overflowPadding?: Padding;
   /**
    * Function that returns the anchor element's DOMRect. If this is explicitly
    * passed, it will override the anchor `getBoundingClientRect` method.
