@@ -8,7 +8,10 @@ export type {
   SelectArrowProps,
 } from "@ariakit/react-components/select/select-arrow";
 export { SelectArrow } from "@ariakit/react-components/select/select-arrow";
-export { useSelectContext } from "@ariakit/react-components/select/select-context";
+export {
+  useSelectContext,
+  useSelectItemChecked,
+} from "@ariakit/react-components/select/select-context";
 export type {
   SelectDismissOptions,
   SelectDismissProps,
