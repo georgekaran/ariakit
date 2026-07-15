@@ -3,19 +3,6 @@ import "./style.css";
 
 const fruits = ["Apple", "Banana", "Grape", "Orange"];
 
-function FruitContent({ fruit }: { fruit: string }) {
-  const checked = Ariakit.useSelectItemChecked();
-  return (
-    <>
-      <span aria-hidden className="indicator">
-        {checked ? "●" : "○"}
-      </span>
-      <span className="label">{fruit}</span>
-      {checked && <span className="badge">selected</span>}
-    </>
-  );
-}
-
 export default function Example() {
   return (
     <div className="wrapper">
@@ -29,7 +16,17 @@ export default function Example() {
               value={fruit}
               className="select-item"
             >
-              <FruitContent fruit={fruit} />
+              <Ariakit.SelectItemChecked>
+                {(checked) => (
+                  <>
+                    <span aria-hidden className="indicator">
+                      {checked ? "●" : "○"}
+                    </span>
+                    <span className="label">{fruit}</span>
+                    {checked && <span className="badge">selected</span>}
+                  </>
+                )}
+              </Ariakit.SelectItemChecked>
             </Ariakit.SelectItem>
           ))}
         </Ariakit.SelectPopover>

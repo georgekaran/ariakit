@@ -15,7 +15,7 @@ test("selected state updates when the value changes", async () => {
   expect(q.option("Apple")).toBeInTheDocument();
 });
 
-test("useSelectItemChecked drives the indicator", async () => {
+test("SelectItemChecked drives the indicator", async () => {
   await click(q.combobox("Favorite fruit"));
   const filled = q.option.all().filter((o) => o.textContent?.includes("●"));
   expect(filled).toHaveLength(1);
