@@ -1,0 +1,28 @@
+@import url("../select/style.css");
+
+.button {
+  @apply
+    w-60
+  ;
+}
+
+.select-item {
+  @apply
+    flex
+    items-center
+    gap-2
+  ;
+}
+
+.label {
+  @apply
+    flex-1
+  ;
+}
+
+.badge {
+  @apply
+    text-xs
+    opacity-80
+  ;
+}
