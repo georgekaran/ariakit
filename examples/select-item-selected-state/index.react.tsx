@@ -3,8 +3,6 @@ import "./style.css";
 
 const fruits = ["Apple", "Banana", "Grape", "Orange"];
 
-// Rendered inside SelectItem, so it can read the item's selected state from the
-// context that SelectItem provides.
 function FruitContent({ fruit }: { fruit: string }) {
   const checked = Ariakit.useSelectItemChecked();
   return (
