@@ -8,10 +8,7 @@ export type {
   SelectArrowProps,
 } from "@ariakit/react-components/select/select-arrow";
 export { SelectArrow } from "@ariakit/react-components/select/select-arrow";
-export {
-  useSelectContext,
-  useSelectItemChecked,
-} from "@ariakit/react-components/select/select-context";
+export { useSelectContext } from "@ariakit/react-components/select/select-context";
 export type {
   SelectDismissOptions,
   SelectDismissProps,
@@ -42,6 +39,8 @@ export type {
   SelectItemCheckProps,
 } from "@ariakit/react-components/select/select-item-check";
 export { SelectItemCheck } from "@ariakit/react-components/select/select-item-check";
+export type { SelectItemCheckedProps } from "@ariakit/react-components/select/select-item-checked";
+export { SelectItemChecked } from "@ariakit/react-components/select/select-item-checked";
 export type {
   SelectLabelOptions,
   SelectLabelProps,
