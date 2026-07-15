@@ -1,6 +1,6 @@
 import { createStoreContext } from "@ariakit/react-utils";
 import type { Dispatch, SetStateAction } from "react";
-import { createContext } from "react";
+import { createContext, useContext } from "react";
 import {
   CompositeContextProvider,
   CompositeScopedContextProvider,
@@ -40,6 +40,20 @@ export const SelectContextProvider = ctx.ContextProvider;
 export const SelectScopedContextProvider = ctx.ScopedContextProvider;
 
 export const SelectItemCheckedContext = createContext(false);
+
+/**
+ * Returns whether the closest
+ * [`SelectItem`](https://ariakit.com/reference/select-item) is currently
+ * selected. Must be called from a component rendered inside a `SelectItem`.
+ * @example
+ * function ItemIcon() {
+ *   const checked = useSelectItemChecked();
+ *   return checked ? <CheckIcon /> : null;
+ * }
+ */
+export function useSelectItemChecked() {
+  return useContext(SelectItemCheckedContext);
+}
 
 export const SelectHeadingContext = createContext<
   [string | undefined, Dispatch<SetStateAction<string | undefined>>] | null
