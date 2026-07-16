@@ -3,6 +3,7 @@ import {
   createStore,
   init,
   setup,
+  sync,
   throwOnConflictingProps,
 } from "@ariakit/store";
 import type { Store, StoreOptions, StoreProps } from "@ariakit/store";
@@ -126,6 +127,12 @@ export function createCollectionStore<
   );
 
   const itemsMap = new Map<string, T>(items.map((item) => [item.id, item]));
+  // Ref count of ids currently backed by a live `registerItem`. Updated
+  // synchronously by registerItem so it never lags the public/private stores.
+  // Used to tell an element-owned entry apart from one seeded by controlled
+  // `items`, so the reconcile below never evicts or overwrites a registered
+  // item. A count (not a Set) keeps layered same-id registrations correct.
+  const elementIdCounts = new Map<string, number>();
   // These arrays are replaced independently, so each needs its own cache.
   const itemIdCache: ItemIdCache<T> = {};
   const renderedItemIdCache: ItemIdCache<T> = {};
@@ -160,6 +167,32 @@ export function createCollectionStore<
       collection.setState("items", state.items);
     });
   });
+
+  // Reconcile the lookup cache with controlled `items`. When `items` is
+  // provided as a prop, it updates the public store directly without going
+  // through `registerItem`, so late items would otherwise be invisible to
+  // `item()` (https://github.com/ariakit/ariakit/issues/6733). Seed those
+  // controlled entries into `itemsMap`, and drop stale controlled entries when
+  // they disappear. Element-owned ids are left untouched so this can't
+  // resurrect an entry #4202 intentionally removed.
+  // Runs synchronously (not batched) so a controlled removal drops the stale
+  // entry in the same tick, preserving the guarantee from #4202 that `item()`
+  // never returns an item that is no longer present.
+  setup(collection, () =>
+    sync(collection, ["items"], (state) => {
+      const controlledIds = new Set<string>();
+      for (const item of state.items) {
+        controlledIds.add(item.id);
+        if (elementIdCounts.has(item.id)) continue;
+        itemsMap.set(item.id, item);
+      }
+      for (const id of itemsMap.keys()) {
+        if (elementIdCounts.has(id)) continue;
+        if (controlledIds.has(id)) continue;
+        itemsMap.delete(id);
+      }
+    }),
+  );
 
   setup(privateStore, () => {
     return batch(privateStore, ["renderedItems"], (state) => {
@@ -285,8 +318,27 @@ export function createCollectionStore<
     setItems: setRenderedItems,
   };
 
-  const registerItem: CollectionStore<T>["registerItem"] = (item) =>
-    mergeItem(item, itemMergeOptions);
+  const registerItem: CollectionStore<T>["registerItem"] = (item) => {
+    elementIdCounts.set(item.id, (elementIdCounts.get(item.id) ?? 0) + 1);
+    const unmerge = mergeItem(item, itemMergeOptions);
+    return () => {
+      unmerge();
+      const count = (elementIdCounts.get(item.id) ?? 0) - 1;
+      if (count > 0) {
+        elementIdCounts.set(item.id, count);
+        return;
+      }
+      elementIdCounts.delete(item.id);
+      // The element is gone. If the id still exists as a controlled item,
+      // re-seed it so `item()` keeps resolving the controlled twin.
+      const controlled = collection
+        .getState()
+        .items.find((current) => current.id === item.id);
+      if (controlled) {
+        itemsMap.set(item.id, controlled);
+      }
+    };
+  };
 
   return {
     ...collection,
