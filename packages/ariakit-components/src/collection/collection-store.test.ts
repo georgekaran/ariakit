@@ -268,3 +268,82 @@ test("updates rendered items after sorting a large collection", async () => {
     stop();
   }
 });
+
+// https://github.com/ariakit/ariakit/issues/6733
+test("resolves a controlled item added after store creation", async () => {
+  const store = createCollectionStore<{ id: string; value?: string }>();
+  const stop = init(store);
+
+  try {
+    // Late controlled items arrive on the public store only, the same way
+    // `useStoreProps` syncs a controlled `items` prop after creation.
+    store.setState("items", [{ id: "apple", value: "Apple" }]);
+
+    await expect
+      .poll(() => store.getState().items)
+      .toEqual([{ id: "apple", value: "Apple" }]);
+
+    expect(store.item("apple")).toEqual({ id: "apple", value: "Apple" });
+  } finally {
+    stop();
+  }
+});
+
+// https://github.com/ariakit/ariakit/issues/6733
+test("stops resolving a controlled item once it is removed", async () => {
+  const store = createCollectionStore<{ id: string; value?: string }>();
+  const stop = init(store);
+
+  try {
+    store.setState("items", [{ id: "apple", value: "Apple" }]);
+    await expect
+      .poll(() => store.item("apple"))
+      .toEqual({ id: "apple", value: "Apple" });
+
+    // Controlled removal is a plain array replacement on the public store.
+    store.setState("items", []);
+
+    // The #4202 guardrail: item() must not return a removed item. A naive
+    // add-only seed of itemsMap would keep returning the stale Apple here.
+    expect(store.item("apple")).toBeNull();
+  } finally {
+    stop();
+  }
+});
+
+// https://github.com/ariakit/ariakit/issues/6733
+test("keeps a registered item when its controlled twin is removed", async () => {
+  const store = createCollectionStore<{
+    id: string;
+    element?: HTMLElement | null;
+    value?: string;
+  }>();
+  const stop = init(store);
+  const element = document.createElement("button");
+  document.body.append(element);
+
+  try {
+    // A mounted element registers "apple" through the normal lifecycle.
+    const unregister = store.registerItem({
+      id: "apple",
+      element,
+      value: "Apple",
+    });
+    await expect
+      .poll(() => store.item("apple"))
+      .toMatchObject({ id: "apple", value: "Apple" });
+
+    // The same id also arrives as a controlled item, then is removed.
+    store.setState("items", [{ id: "apple", value: "Apple" }]);
+    store.setState("items", []);
+
+    // Removing the controlled twin must not evict the still-registered element
+    // entry. Proves the reconcile only touches controlled-sourced keys.
+    expect(store.item("apple")).toMatchObject({ id: "apple" });
+
+    unregister();
+    await expect.poll(() => store.item("apple")).toBeNull();
+  } finally {
+    stop();
+  }
+});
