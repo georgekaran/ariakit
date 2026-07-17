@@ -426,9 +426,29 @@ export function useStoreProps<
   useSafeLayoutEffect(() => {
     if (value === undefined) return;
     store.setState(key, value);
-    return batch(store, [key], () => {
+    return batch(store, [key], (state) => {
+      const { value, setValue } = propsRef.current;
       if (value === undefined) return;
-      store.setState(key, value);
+      if (isSameValue(state[key], value)) return;
+      if (!setValue) {
+        store.setState(key, value);
+        return;
+      }
+      // The subscribe listener above has already reported this change through
+      // setValue, but React may only process that update in a later task when
+      // the change originates outside an event dispatch (setTimeout, promise
+      // callbacks). Resetting the store to the still-stale value prop here
+      // would flicker the state back and forth (see
+      // https://github.com/ariakit/ariakit/issues/5695), so defer the reset
+      // one task and read the latest value prop then. A re-render in the
+      // meantime re-registers this listener, which clears the pending reset
+      // after the effect above has synced the store with the fresh prop.
+      const timeout = setTimeout(() => {
+        const { value } = propsRef.current;
+        if (value === undefined) return;
+        store.setState(key, value);
+      });
+      return () => clearTimeout(timeout);
     });
   });
 }
