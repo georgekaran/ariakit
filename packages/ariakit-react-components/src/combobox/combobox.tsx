@@ -8,6 +8,7 @@ import {
   useSafeLayoutEffect,
   useUpdateEffect,
   useUpdateLayoutEffect,
+  useWrapElement,
   createElement,
   createHook,
   forwardRef,
@@ -27,6 +28,7 @@ import {
   isFalsyBooleanCallback,
   noop,
   normalizeString,
+  toArray,
 } from "@ariakit/utils";
 import type { BooleanOrCallback, StringWithValue } from "@ariakit/utils";
 import type {
@@ -217,6 +219,15 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
     const items = useStoreState(store, "renderedItems");
     const open = useStoreState(store, "open");
     const contentElement = useStoreState(store, "contentElement");
+
+    // When the selected value is an array, the combobox input can't submit it to
+    // a form on its own. We only read it here when a `name` is provided so the
+    // hidden inputs below can mirror the array into the form state.
+    const name = props.name;
+    const selectedValue = useStoreState(store, ["selectedValue"], (state) => {
+      if (!name) return;
+      return state.selectedValue;
+    });
 
     // The current input value may differ from state.value when
     // autoComplete is either "both" or "inline", in which case it will be
@@ -687,6 +698,40 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
       (state) => state.activeId === null,
     );
 
+    // A combobox with an array selected value can't be submitted through its
+    // own input, which only holds the search text. When a `name` is provided in
+    // this case, we render a hidden input per selected value so the array is
+    // mapped into the form state, and remove the `name` from the input so it
+    // doesn't submit the search text as well. Single (string) selected values
+    // keep the `name` on the input, preserving the existing behavior.
+    const multiSelectable = Array.isArray(selectedValue);
+    const form = props.form;
+
+    props = useWrapElement(
+      props,
+      (element) => {
+        if (!name) return element;
+        if (!multiSelectable) return element;
+        return (
+          <>
+            {toArray(selectedValue).map((value, index) => (
+              // Keyed by index so duplicate values in the array are all
+              // submitted instead of collapsing into a single hidden input.
+              <input
+                key={index}
+                type="hidden"
+                name={name}
+                value={value}
+                form={form}
+              />
+            ))}
+            {element}
+          </>
+        );
+      },
+      [name, form, multiSelectable, selectedValue],
+    );
+
     props = {
       role: "combobox",
       "aria-autocomplete": ariaAutoComplete,
@@ -697,6 +742,9 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
       value,
       ...props,
       id,
+      // Move the `name` to the hidden inputs above when submitting an array, so
+      // the input itself doesn't also submit the search text.
+      name: multiSelectable ? undefined : props.name,
       ref: useMergeRefs(ref, props.ref),
       onChange,
       onCompositionStart,
