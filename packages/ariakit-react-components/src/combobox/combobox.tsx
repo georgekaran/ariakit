@@ -46,6 +46,7 @@ import type { CompositeOptions } from "../composite/composite.tsx";
 import { useComposite } from "../composite/composite.tsx";
 import type { PopoverAnchorOptions } from "../popover/popover-anchor.tsx";
 import { usePopoverAnchor } from "../popover/popover-anchor.tsx";
+import { getVisuallyHiddenStyle } from "../visually-hidden/visually-hidden.tsx";
 import { useComboboxProviderContext } from "./combobox-context.tsx";
 import type {
   ComboboxStore,
@@ -56,6 +57,10 @@ import type {
 const TagName = "input" satisfies ElementType;
 type TagName = typeof TagName;
 type HTMLType = HTMLElementTagNameMap[TagName];
+
+function getSelectedValues(select: HTMLSelectElement) {
+  return Array.from(select.selectedOptions).map((option) => option.value);
+}
 
 function isFirstItemAutoSelected(
   items: ComboboxStoreState["items"],
@@ -700,12 +705,16 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
 
     // A combobox with an array selected value can't be submitted through its
     // own input, which only holds the search text. When a `name` is provided in
-    // this case, we render a hidden input per selected value so the array is
-    // mapped into the form state, and remove the `name` from the input so it
-    // doesn't submit the search text as well. Single (string) selected values
-    // keep the `name` on the input, preserving the existing behavior.
+    // this case, we render a visually hidden native `<select multiple>` that
+    // mirrors the selected values into the form state (matching how `Select`
+    // supports forms), and remove the `name` from the input so it doesn't also
+    // submit the search text. Single (string) selected values keep the `name`
+    // on the input, preserving the existing behavior.
     const multiSelectable = Array.isArray(selectedValue);
     const form = props.form;
+    const required = props.required;
+    const label = props["aria-label"];
+    const labelledBy = props["aria-labelledby"];
 
     props = useWrapElement(
       props,
@@ -714,22 +723,51 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
         if (!multiSelectable) return element;
         return (
           <>
-            {toArray(selectedValue).map((value, index) => (
-              // Keyed by index so duplicate values in the array are all
-              // submitted instead of collapsing into a single hidden input.
-              <input
-                key={index}
-                type="hidden"
-                name={name}
-                value={value}
-                form={form}
-              />
-            ))}
+            <select
+              style={getVisuallyHiddenStyle()}
+              tabIndex={-1}
+              aria-hidden
+              aria-label={label}
+              aria-labelledby={label != null ? undefined : labelledBy}
+              name={name}
+              form={form}
+              required={required}
+              disabled={props.disabled}
+              multiple
+              value={selectedValue}
+              // Even though this element is visually hidden and not tabbable,
+              // it's still focusable. Some autofill extensions like 1password
+              // will move focus to the next form element on autofill. In this
+              // case, we want to move focus back to the combobox input.
+              onFocus={() => ref.current?.focus()}
+              onChange={(event) => {
+                store?.setSelectedValue(getSelectedValues(event.target));
+              }}
+            >
+              {toArray(selectedValue).map((value, index) => (
+                // Keyed by index so duplicate values in the array each get
+                // their own option and are all submitted, instead of collapsing
+                // into a single entry.
+                <option key={index} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
             {element}
           </>
         );
       },
-      [name, form, multiSelectable, selectedValue],
+      [
+        store,
+        name,
+        form,
+        required,
+        label,
+        labelledBy,
+        multiSelectable,
+        selectedValue,
+        props.disabled,
+      ],
     );
 
     props = {
@@ -742,8 +780,8 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
       value,
       ...props,
       id,
-      // Move the `name` to the hidden inputs above when submitting an array, so
-      // the input itself doesn't also submit the search text.
+      // Move the `name` to the hidden native select above when submitting an
+      // array, so the input itself doesn't also submit the search text.
       name: multiSelectable ? undefined : props.name,
       ref: useMergeRefs(ref, props.ref),
       onChange,
