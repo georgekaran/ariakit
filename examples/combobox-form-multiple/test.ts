@@ -9,13 +9,18 @@ test("submits an empty selection", async () => {
   expect(alert).toHaveBeenCalledWith("");
 });
 
-test("submits the selected values as an array", async () => {
-  using alert = spyOnAlert();
+test("mirrors every selected value into the hidden form control", async () => {
   await click(q.combobox());
   await click(q.option("Apple"));
   await click(q.option("Orange"));
-  await click(q.button("Submit"));
-  expect(alert).toHaveBeenCalledWith("Apple, Orange");
+  // The end-to-end form submission is asserted in test-browser.ts: happy-dom's
+  // FormData only reads the first selected option of a `<select multiple>`, so
+  // here we assert the hidden native select mirrors the full selection instead.
+  const select = document.querySelector<HTMLSelectElement>(
+    "select[name='fruits']",
+  );
+  const selected = Array.from(select?.selectedOptions ?? [], (o) => o.value);
+  expect(selected).toEqual(["Apple", "Orange"]);
 });
 
 test("does not submit the typed search text", async () => {
