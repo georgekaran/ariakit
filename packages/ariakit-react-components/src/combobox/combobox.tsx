@@ -797,6 +797,28 @@ export const Combobox = forwardRef(function Combobox(props: ComboboxProps) {
   return createElement(TagName, htmlProps);
 });
 
+/**
+ * Renders a combobox input element that can be used to filter a list of items.
+ *
+ * This is an alias for the
+ * [`Combobox`](https://ariakit.com/reference/combobox) component. It's provided
+ * to make the input role explicit when composing it alongside a select trigger
+ * to create a filterable select.
+ * @see https://ariakit.com/components/combobox
+ * @example
+ * ```jsx {2}
+ * <ComboboxProvider>
+ *   <ComboboxInput />
+ *   <ComboboxPopover>
+ *     <ComboboxItem value="Apple" />
+ *     <ComboboxItem value="Banana" />
+ *     <ComboboxItem value="Orange" />
+ *   </ComboboxPopover>
+ * </ComboboxProvider>
+ * ```
+ */
+export const ComboboxInput = Combobox;
+
 export interface ComboboxOptions<T extends ElementType = TagName>
   extends CompositeOptions<T>, PopoverAnchorOptions<T> {
   /**
@@ -1027,3 +1049,9 @@ export type ComboboxProps<T extends ElementType = TagName> = Props<
   T,
   ComboboxOptions<T>
 >;
+
+export type ComboboxInputOptions<T extends ElementType = TagName> =
+  ComboboxOptions<T>;
+
+export type ComboboxInputProps<T extends ElementType = TagName> =
+  ComboboxProps<T>;
