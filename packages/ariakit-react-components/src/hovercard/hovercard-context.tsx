@@ -1,14 +1,7 @@
 import { createStoreContext } from "@ariakit/react-utils";
-import {
-  PopoverContextProvider,
-  PopoverScopedContextProvider,
-} from "../popover/popover-context.tsx";
 import type { HovercardStore } from "./hovercard-store.ts";
 
-const ctx = createStoreContext<HovercardStore>(
-  [PopoverContextProvider],
-  [PopoverScopedContextProvider],
-);
+const ctx = createStoreContext<HovercardStore>();
 
 /**
  * Returns the hovercard store from the nearest hovercard container.

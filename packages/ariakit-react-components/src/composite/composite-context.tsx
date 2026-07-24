@@ -1,15 +1,8 @@
 import { createStoreContext } from "@ariakit/react-utils";
 import { createContext } from "react";
-import {
-  CollectionContextProvider,
-  CollectionScopedContextProvider,
-} from "../collection/collection-context.tsx";
 import type { CompositeStore } from "./composite-store.ts";
 
-const ctx = createStoreContext<CompositeStore>(
-  [CollectionContextProvider],
-  [CollectionScopedContextProvider],
-);
+const ctx = createStoreContext<CompositeStore>();
 
 /**
  * Returns the composite store from the nearest composite container.

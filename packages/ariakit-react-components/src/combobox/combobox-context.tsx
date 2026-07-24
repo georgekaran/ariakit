@@ -1,24 +1,13 @@
 import { createStoreContext } from "@ariakit/react-utils";
 import type { Dispatch, SetStateAction } from "react";
 import { createContext } from "react";
-import {
-  CompositeContextProvider,
-  CompositeScopedContextProvider,
-} from "../composite/composite-context.tsx";
-import {
-  PopoverContextProvider,
-  PopoverScopedContextProvider,
-} from "../popover/popover-context.tsx";
 import type { ComboboxStore } from "./combobox-store.ts";
 
 export const ComboboxListRoleContext = createContext<string | undefined>(
   undefined,
 );
 
-const ctx = createStoreContext<ComboboxStore>(
-  [PopoverContextProvider, CompositeContextProvider],
-  [PopoverScopedContextProvider, CompositeScopedContextProvider],
-);
+const ctx = createStoreContext<ComboboxStore>();
 
 /**
  * Returns the combobox store from the nearest combobox container.

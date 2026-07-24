@@ -91,18 +91,15 @@ export function createHook<
   return useRole as Hook<T, P>;
 }
 
-type StoreProvider<T extends Store> = React.ComponentType<{
-  value: T | undefined;
-  children?: React.ReactNode;
-}>;
-
 /**
  * Creates an Ariakit store context with hooks and provider components.
+ *
+ * The returned providers expose the store through this context only. Component
+ * families don't inherit each other's contexts, so a store must be explicitly
+ * passed to components from other families, either through their `store` prop
+ * or through their own provider.
  */
-export function createStoreContext<T extends Store>(
-  providers: StoreProvider<T>[] = [],
-  scopedProviders: StoreProvider<T>[] = [],
-) {
+export function createStoreContext<T extends Store>() {
   const context = React.createContext<T | undefined>(undefined);
   const scopedContext = React.createContext<T | undefined>(undefined);
 
@@ -125,10 +122,7 @@ export function createStoreContext<T extends Store>(
   const ContextProvider = (
     props: React.ComponentPropsWithoutRef<typeof context.Provider>,
   ) => {
-    return providers.reduceRight(
-      (children, Provider) => <Provider {...props}>{children}</Provider>,
-      <context.Provider {...props} />,
-    );
+    return <context.Provider {...props} />;
   };
 
   const ScopedContextProvider = (
@@ -136,12 +130,7 @@ export function createStoreContext<T extends Store>(
   ) => {
     return (
       <ContextProvider {...props}>
-        {scopedProviders.reduceRight(
-          (children, Provider) => (
-            <Provider {...props}>{children}</Provider>
-          ),
-          <scopedContext.Provider {...props} />,
-        )}
+        <scopedContext.Provider {...props} />
       </ContextProvider>
     );
   };

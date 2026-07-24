@@ -2,10 +2,6 @@ import type { StringLike } from "@ariakit/components/form/types";
 import { createStoreContext, useId } from "@ariakit/react-utils";
 import { invariant } from "@ariakit/utils";
 import { useCallback, useRef } from "react";
-import {
-  CollectionContextProvider,
-  CollectionScopedContextProvider,
-} from "../collection/collection-context.tsx";
 import type { CollectionItemOptions } from "../collection/collection-item.tsx";
 import type { FormStore, FormStoreItem } from "./form-store.ts";
 
@@ -18,10 +14,7 @@ interface FormItemContextOptions {
   component: string;
 }
 
-const ctx = createStoreContext<FormStore>(
-  [CollectionContextProvider],
-  [CollectionScopedContextProvider],
-);
+const ctx = createStoreContext<FormStore>();
 
 /**
  * Returns the form store from the nearest form container.

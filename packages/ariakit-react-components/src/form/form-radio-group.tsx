@@ -32,9 +32,9 @@ type TagName = typeof TagName;
  */
 export const useFormRadioGroup = createHook<TagName, FormRadioGroupOptions>(
   function useFormRadioGroup({ store, ...props }) {
-    // Reset the composite context so FormRadio items inside this group
-    // don't register to an unrelated ancestor composite store (e.g.,
-    // TabStore). Form controls explicitly pass their store to
+    // Reset the composite context so FormRadio items inside this group don't
+    // register to an enclosing composite store (e.g., a Toolbar or Composite
+    // ancestor). Form controls explicitly pass their store to
     // useCollectionItem, so they're not affected by this reset.
     props = useWrapElement(
       props,

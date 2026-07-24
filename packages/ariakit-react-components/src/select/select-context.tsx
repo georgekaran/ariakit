@@ -1,20 +1,9 @@
 import { createStoreContext } from "@ariakit/react-utils";
 import type { Dispatch, SetStateAction } from "react";
 import { createContext } from "react";
-import {
-  CompositeContextProvider,
-  CompositeScopedContextProvider,
-} from "../composite/composite-context.tsx";
-import {
-  PopoverContextProvider,
-  PopoverScopedContextProvider,
-} from "../popover/popover-context.tsx";
 import type { SelectStore } from "./select-store.ts";
 
-const ctx = createStoreContext<SelectStore>(
-  [PopoverContextProvider, CompositeContextProvider],
-  [PopoverScopedContextProvider, CompositeScopedContextProvider],
-);
+const ctx = createStoreContext<SelectStore>();
 
 /**
  * Returns the select store from the nearest select container.

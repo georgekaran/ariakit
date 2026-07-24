@@ -1,14 +1,7 @@
 import { createStoreContext } from "@ariakit/react-utils";
-import {
-  HovercardContextProvider,
-  HovercardScopedContextProvider,
-} from "../hovercard/hovercard-context.tsx";
 import type { TooltipStore } from "./tooltip-store.ts";
 
-const ctx = createStoreContext<TooltipStore>(
-  [HovercardContextProvider],
-  [HovercardScopedContextProvider],
-);
+const ctx = createStoreContext<TooltipStore>();
 
 /**
  * Returns the tooltip store from the nearest tooltip container.

@@ -1,14 +1,6 @@
 import { createStoreContext } from "@ariakit/react-utils";
 import { createContext } from "react";
 import {
-  CompositeContextProvider,
-  CompositeScopedContextProvider,
-} from "../composite/composite-context.tsx";
-import {
-  HovercardContextProvider,
-  HovercardScopedContextProvider,
-} from "../hovercard/hovercard-context.tsx";
-import {
   MenubarContextProvider,
   MenubarScopedContextProvider,
   useMenubarContext,
@@ -17,10 +9,7 @@ import {
 } from "../menubar/menubar-context.tsx";
 import type { MenuStore } from "./menu-store.ts";
 
-const menu = createStoreContext<MenuStore>(
-  [CompositeContextProvider, HovercardContextProvider],
-  [CompositeScopedContextProvider, HovercardScopedContextProvider],
-);
+const menu = createStoreContext<MenuStore>();
 
 /**
  * Returns the menu store from the nearest menu container.

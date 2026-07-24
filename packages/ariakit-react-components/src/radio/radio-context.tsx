@@ -1,15 +1,8 @@
 import { createStoreContext } from "@ariakit/react-utils";
 import { createContext } from "react";
-import {
-  CompositeContextProvider,
-  CompositeScopedContextProvider,
-} from "../composite/composite-context.tsx";
 import type { RadioStore } from "./radio-store.ts";
 
-const ctx = createStoreContext<RadioStore>(
-  [CompositeContextProvider],
-  [CompositeScopedContextProvider],
-);
+const ctx = createStoreContext<RadioStore>();
 
 /**
  * Returns the radio store from the nearest radio container.

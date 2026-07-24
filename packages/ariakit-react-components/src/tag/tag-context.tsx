@@ -1,9 +1,5 @@
 import { createStoreContext } from "@ariakit/react-utils";
 import { createContext } from "react";
-import {
-  CompositeContextProvider,
-  CompositeScopedContextProvider,
-} from "../composite/composite-context.tsx";
 import type { TagStore } from "./tag-store.ts";
 
 export const TagValueContext = createContext<string | null>(null);
@@ -11,10 +7,7 @@ export const TagRemoveIdContext = createContext<((id?: string) => void) | null>(
   null,
 );
 
-const ctx = createStoreContext<TagStore>(
-  [CompositeContextProvider],
-  [CompositeScopedContextProvider],
-);
+const ctx = createStoreContext<TagStore>();
 
 /**
  * Returns the tag store from the nearest tag container.

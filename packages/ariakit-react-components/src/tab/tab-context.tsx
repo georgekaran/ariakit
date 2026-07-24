@@ -1,14 +1,7 @@
 import { createStoreContext } from "@ariakit/react-utils";
-import {
-  CompositeContextProvider,
-  CompositeScopedContextProvider,
-} from "../composite/composite-context.tsx";
 import type { TabStore } from "./tab-store.ts";
 
-const ctx = createStoreContext<TabStore>(
-  [CompositeContextProvider],
-  [CompositeScopedContextProvider],
-);
+const ctx = createStoreContext<TabStore>();
 
 /**
  * Returns the tab store from the nearest tab container.

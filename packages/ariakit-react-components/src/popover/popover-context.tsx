@@ -1,14 +1,7 @@
 import { createStoreContext } from "@ariakit/react-utils";
-import {
-  DialogContextProvider,
-  DialogScopedContextProvider,
-} from "../dialog/dialog-context.tsx";
 import type { PopoverStore } from "./popover-store.ts";
 
-const ctx = createStoreContext<PopoverStore>(
-  [DialogContextProvider],
-  [DialogScopedContextProvider],
-);
+const ctx = createStoreContext<PopoverStore>();
 
 /**
  * Returns the popover store from the nearest popover container.

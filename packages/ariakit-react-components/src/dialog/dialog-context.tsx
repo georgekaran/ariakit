@@ -1,16 +1,9 @@
 import { createStoreContext } from "@ariakit/react-utils";
 import type { SetState } from "@ariakit/utils";
 import { createContext } from "react";
-import {
-  DisclosureContextProvider,
-  DisclosureScopedContextProvider,
-} from "../disclosure/disclosure-context.tsx";
 import type { DialogStore } from "./dialog-store.ts";
 
-const ctx = createStoreContext<DialogStore>(
-  [DisclosureContextProvider],
-  [DisclosureScopedContextProvider],
-);
+const ctx = createStoreContext<DialogStore>();
 
 /**
  * Returns the dialog store from the nearest dialog container.
