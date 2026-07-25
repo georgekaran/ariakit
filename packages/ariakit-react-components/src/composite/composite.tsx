@@ -12,6 +12,7 @@ import {
   memo,
 } from "@ariakit/react-utils";
 import type { Props } from "@ariakit/react-utils";
+import { getRequestedState } from "@ariakit/store";
 import {
   flatten2DArray,
   reverseArray,
@@ -183,11 +184,13 @@ const CompositeFocusOnMove = memo(function CompositeFocusOnMove({
   // renders while navigating.
   const baseElement = useStoreState(store, "baseElement");
 
-  // Focus on the active item element.
+  // Focus on the active item element. When activeId is controlled, the move
+  // that incremented `moves` may have only requested the new active id, so
+  // read the requested value to focus the item the move targeted.
   useEffect(() => {
     if (!moves) return;
     if (!focusOnMove) return;
-    const { activeId } = store.getState();
+    const activeId = getRequestedState(store, "activeId");
     const itemElement = getEnabledItem(store, activeId)?.element;
     if (!itemElement) return;
     withBaseScrollPreserved(store, () => focusIntoView(itemElement));
@@ -198,7 +201,7 @@ const CompositeFocusOnMove = memo(function CompositeFocusOnMove({
   useSafeLayoutEffect(() => {
     if (!moves) return;
     if (!baseElement) return;
-    const { activeId } = store.getState();
+    const activeId = getRequestedState(store, "activeId");
     const isSelfActive = activeId === null;
     if (!isSelfActive) return;
     const previousElement = previousElementRef.current;

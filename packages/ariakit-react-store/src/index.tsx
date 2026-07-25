@@ -3,8 +3,13 @@ import {
   useLiveRef,
   useSafeLayoutEffect,
 } from "@ariakit/react-utils";
-import { batch, init, subscribe } from "@ariakit/store";
-import type { Store as CoreStore, State, StoreState } from "@ariakit/store";
+import { controlState, init, subscribe } from "@ariakit/store";
+import type {
+  Store as CoreStore,
+  State,
+  StateController,
+  StoreState,
+} from "@ariakit/store";
 import { hasOwnProperty, identity } from "@ariakit/utils";
 import type { AnyFunction, PickByValue, SetState } from "@ariakit/utils";
 import * as React from "react";
@@ -393,6 +398,12 @@ export function useStoreStateObject(
 
 /**
  * Synchronizes the store with the props, including parent store props.
+ *
+ * While the value prop is provided, the key is controlled: writes to it
+ * anywhere in the composed store graph don't commit, they only call the
+ * setValue prop with the requested value. The value prop is the single source
+ * of truth — the store updates, and notifies subscribers once, when the prop
+ * changes. Without a value prop, a setValue prop merely observes the store.
  * @param store The store to synchronize.
  * @param props The props to synchronize with.
  * @param key The key of the value prop.
@@ -408,9 +419,13 @@ export function useStoreProps<
   const value = hasOwnProperty(props, key) ? props[key] : undefined;
   const setValue = setKey ? props[setKey] : undefined;
   const hasSetValue = !!setValue;
+  const hasValue = value !== undefined;
   const propsRef = useLiveRef({ value, setValue });
+  const controllerRef = React.useRef<StateController<S[K]> | null>(null);
 
-  // Calls setValue when the state value changes.
+  // Calls setValue when the state value changes. While controlled, commits of
+  // the own value prop are suppressed by the isSameValue check, so this only
+  // reports changes committed through another controller in the same graph.
   useSafeLayoutEffect(() => {
     if (!hasSetValue) return;
     return subscribe(store, [key], (state, prev) => {
@@ -422,14 +437,27 @@ export function useStoreProps<
     });
   }, [store, key, hasSetValue]);
 
-  // If the value prop is provided, we'll always reset the store state to it.
+  // Takes control of the key while the value prop is provided. Requests are
+  // forwarded to the current setValue prop, which may accept the update by
+  // re-rendering with a new value prop, or ignore it.
+  useSafeLayoutEffect(() => {
+    if (!hasValue) return;
+    const controller = controlState(store, key, (value) => {
+      propsRef.current.setValue?.(value);
+    });
+    controllerRef.current = controller;
+    controller.commit(propsRef.current.value as S[K]);
+    return () => {
+      controllerRef.current = null;
+      controller.release();
+    };
+  }, [store, key, hasValue]);
+
+  // Commits the value prop on every render. Committing the current value is a
+  // no-op, so this only notifies subscribers when the prop has changed.
   useSafeLayoutEffect(() => {
     if (value === undefined) return;
-    store.setState(key, value);
-    return batch(store, [key], () => {
-      if (value === undefined) return;
-      store.setState(key, value);
-    });
+    controllerRef.current?.commit(value);
   });
 }
 

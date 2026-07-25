@@ -1,6 +1,7 @@
 import {
   batch,
   createStore,
+  getRequestedState,
   mergeStore,
   omit,
   setup,
@@ -136,8 +137,12 @@ export function createTabStore({
   // using the keyboard.
   setup(tab, () =>
     sync(tab, ["moves"], () => {
-      const { activeId, selectOnMove } = tab.getState();
+      const { selectOnMove } = tab.getState();
       if (!selectOnMove) return;
+      // When activeId is controlled, the move that triggered this listener has
+      // only requested the new active id, so read the requested value to
+      // select the tab the move targeted.
+      const activeId = getRequestedState(tab, "activeId");
       if (!activeId) return;
       const tabItem = composite.item(activeId);
       if (!isEnabledTab(tabItem)) return;

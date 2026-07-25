@@ -258,6 +258,8 @@ function useStoreProps<
 
 Synchronizes the store with the props, including parent store props.
 
+While the value prop is provided, the key is controlled: writes to it anywhere in the composed store graph don't commit, they only call the setValue prop with the requested value. The value prop is the single source of truth — the store updates, and notifies subscribers once, when the prop changes. Without a value prop, a setValue prop merely observes the store.
+
 <div align="right">
   <a href="#api-reference">&uarr; back to top</a>
 </div>

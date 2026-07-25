@@ -38,6 +38,24 @@ function getHighestReadableWindow(element: Element) {
   return getWindow(highestElement ?? element);
 }
 
+let restoringFocus = 0;
+
+/**
+ * Runs a programmatic focus restoration (for example, a closing dialog
+ * returning focus to its disclosure). The focusin events it dispatches are
+ * not user interactions, so dialogs that hide on interaction outside ignore
+ * them. Without this, a dialog opened in the same flow would close as soon as
+ * the previous dialog restored focus outside of it.
+ */
+export function restoreFocus(callback: () => void) {
+  restoringFocus += 1;
+  try {
+    callback();
+  } finally {
+    restoringFocus -= 1;
+  }
+}
+
 function isInDocument(target: Element) {
   return target.isConnected;
 }
@@ -243,6 +261,8 @@ export function useHideOnInteractOutside(
     ...props,
     type: "focusin",
     listener: (event) => {
+      // Focus restorations from closing dialogs are not user interactions.
+      if (restoringFocus) return;
       const { contentElement } = store.getState();
       if (!contentElement) return;
       // Fix for https://github.com/ariakit/ariakit/issues/619

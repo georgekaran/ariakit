@@ -68,7 +68,10 @@ import {
 } from "./utils/mark-tree-outside.ts";
 import { prependHiddenDismiss } from "./utils/prepend-hidden-dismiss.ts";
 import { supportsInert } from "./utils/supports-inert.ts";
-import { useHideOnInteractOutside } from "./utils/use-hide-on-interact-outside.ts";
+import {
+  restoreFocus,
+  useHideOnInteractOutside,
+} from "./utils/use-hide-on-interact-outside.ts";
 import { useNestedDialogs } from "./utils/use-nested-dialogs.tsx";
 import { usePreventBodyScroll } from "./utils/use-prevent-body-scroll.ts";
 import { createWalkTreeSnapshot } from "./utils/walk-tree-outside.ts";
@@ -178,6 +181,10 @@ export const useDialog = createHook<TagName, DialogOptions>(function useDialog({
       }
       dialog.dispatchEvent(event);
       if (!event.defaultPrevented) return;
+      // The close was prevented, so the outside interaction that may have
+      // triggered it must not linger and suppress focus restoration on a
+      // later, accepted close.
+      interactedOutsideRef.current = false;
       store.setOpen(true);
     },
   });
@@ -538,7 +545,7 @@ export const useDialog = createHook<TagName, DialogOptions>(function useDialog({
       }
       if (!autoFocusOnHideProp(isElementFocusable ? element : null)) return;
       if (!isElementFocusable) return;
-      element?.focus();
+      restoreFocus(() => element?.focus());
     },
     [store, finalFocus, autoFocusOnHideProp],
   );

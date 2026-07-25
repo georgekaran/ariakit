@@ -39,6 +39,42 @@ type StoreOmit<
 type ListenerMap<S> = Map<keyof S, Set<Listener<S>>>;
 type UpdatedKey<S> = keyof S | Set<keyof S>;
 
+/**
+ * Shared control record for a controlled state key. A single entry object is
+ * attached to every store in a composed store graph that owns the key, so a
+ * write anywhere in the graph finds the same pending request and commit
+ * privilege. See `controlState`.
+ */
+interface ControlEntry {
+  /**
+   * Request handlers, one per active `controlState` registration.
+   */
+  handlers: Set<(value: any) => void>;
+  /**
+   * The last requested value. Subsequent writes derive from it so sequential
+   * and functional updates chain like React state updates. Cleared on commit.
+   */
+  pending: { value: unknown } | null;
+  /**
+   * Greater than zero while a commit for this key is running anywhere in the
+   * graph, which lets the commit's own fan-out and down-sync writes through.
+   */
+  committing: number;
+}
+
+interface ControlSlot {
+  entry: ControlEntry;
+  count: number;
+}
+
+type StoreGetControlEntry<S = State> = (
+  key: keyof S,
+) => ControlEntry | undefined;
+type StoreAttachControl<S = State> = (
+  key: keyof S,
+  entry: ControlEntry,
+) => () => void;
+
 interface ListenerGroup<S> {
   listeners: Set<Listener<S>>;
   listenersByKey?: ListenerMap<S>;
@@ -66,6 +102,8 @@ interface StoreInternals<S = State> {
   batch: StoreBatch<S>;
   pick: StorePick<S>;
   omit: StoreOmit<S>;
+  getControlEntry: StoreGetControlEntry<S>;
+  attachControl: StoreAttachControl<S>;
 }
 
 function getInternal<K extends keyof StoreInternals>(
@@ -387,6 +425,7 @@ export function createStore<S extends State>(
   let batchPending = false;
   let inDispatch = false;
   let updatedKeys = new Set<keyof S>();
+  let controls: Map<keyof S, ControlSlot> | undefined;
   const instances = new Set<symbol>();
 
   const setups = new Set<() => void | (() => void)>();
@@ -582,6 +621,63 @@ export function createStore<S extends State>(
   const storeSubscribe: StoreSubscribe<S> = (keys, listener) =>
     registerListener(keys, listener);
 
+  // Control entries are attached upward at registration time to every store
+  // in the graph that owns the key, so the lookup only has to walk up: a
+  // sibling store reaches the entry through the closest shared ancestor.
+  const storeGetControlEntry: StoreGetControlEntry<S> = (key) => {
+    const slot = controls?.get(key);
+    if (slot) return slot.entry;
+    for (const store of stores) {
+      if (!store) continue;
+      const storeState = store.getState?.();
+      if (!storeState) continue;
+      if (!hasOwnProperty(storeState, key)) continue;
+      const entry = getInternal(store, "getControlEntry")(key);
+      if (entry) return entry;
+    }
+    return;
+  };
+
+  const storeAttachControl: StoreAttachControl<S> = (key, entry) => {
+    controls ??= new Map();
+    const slot = controls.get(key);
+    if (slot && slot.entry !== entry) {
+      // Unreachable through controlState, which always joins an entry already
+      // reachable from the store before attaching. Keep the existing entry.
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(
+          `The "${String(key)}" state is already controlled through another ` +
+            "store in this store tree.",
+        );
+      }
+      return noop;
+    }
+    if (slot) {
+      slot.count += 1;
+    } else {
+      controls.set(key, { entry, count: 1 });
+    }
+    const detachments: Array<() => void> = [];
+    for (const store of stores) {
+      if (!store) continue;
+      const storeState = store.getState?.();
+      if (!storeState) continue;
+      if (!hasOwnProperty(storeState, key)) continue;
+      detachments.push(getInternal(store, "attachControl")(key, entry));
+    }
+    return () => {
+      for (const detach of detachments) {
+        detach();
+      }
+      const currentSlot = controls?.get(key);
+      if (!currentSlot || currentSlot.entry !== entry) return;
+      currentSlot.count -= 1;
+      if (!currentSlot.count) {
+        controls?.delete(key);
+      }
+    };
+  };
+
   // Runs a listener's initial synchronous invocation while preventing reentrant
   // dispatch from running the same listener before the new registration is
   // complete.
@@ -718,6 +814,26 @@ export function createStore<S extends State>(
   const setState: Store<S>["setState"] = (key, value, fromStores = false) => {
     if (!hasOwnProperty(state, key)) return;
 
+    // A write to a controlled key is a request, not a commit: it calls the
+    // control handlers (which invoke the controlled setter prop) and leaves
+    // the state untouched. Only the controller's commit — which raises
+    // `committing` for the whole graph — reaches the commit path below.
+    // `fromStores` writes skip the lookup: they carry a value that a parent
+    // store already committed, which can only have passed through the same
+    // entry's commit.
+    const controlEntry = fromStores ? undefined : storeGetControlEntry(key);
+    if (controlEntry && !controlEntry.committing) {
+      const { pending } = controlEntry;
+      const baseValue = pending ? (pending.value as S[typeof key]) : state[key];
+      const nextValue = applyState(value, () => baseValue);
+      if (isSameValue(nextValue, baseValue)) return;
+      controlEntry.pending = { value: nextValue };
+      for (const handler of [...controlEntry.handlers]) {
+        handler(nextValue);
+      }
+      return;
+    }
+
     const currentValue = state[key];
     const nextValue = applyState(value, () => currentValue);
 
@@ -850,6 +966,8 @@ export function createStore<S extends State>(
       batch: storeBatch,
       pick: storePick,
       omit: storeOmit,
+      getControlEntry: storeGetControlEntry,
+      attachControl: storeAttachControl,
     },
   };
 
@@ -907,6 +1025,108 @@ export function sync<T extends Store, K extends keyof StoreState<T>>(
 export function sync(store?: Store, ...args: Parameters<StoreSync>) {
   if (!store) return;
   return getInternal(store, "sync")(...args);
+}
+
+/**
+ * The object returned by `controlState`, used to commit controlled prop
+ * values and to release control of the key.
+ */
+export interface StateController<T> {
+  /**
+   * Commits a controlled prop value to the store. This is the only path that
+   * updates the public state of a controlled key: it notifies subscribers
+   * once and propagates through composed stores. Committing the current value
+   * only clears the pending request.
+   */
+  commit: (value: T) => void;
+  /**
+   * Releases control of the key. The store keeps the last committed value and
+   * becomes writable again.
+   */
+  release: () => void;
+}
+
+export function controlState<T extends Store, K extends keyof StoreState<T>>(
+  store: T,
+  key: K,
+  onRequest: (value: StoreState<T>[K]) => void,
+): StateController<StoreState<T>[K]>;
+
+export function controlState<T extends Store, K extends keyof StoreState<T>>(
+  store: T | null | undefined,
+  key: K,
+  onRequest: (value: StoreState<T>[K]) => void,
+): T extends Store ? StateController<StoreState<T>[K]> : void;
+
+/**
+ * Controls a state key: writes to the key anywhere in the composed store
+ * graph stop committing and instead call `onRequest` with the requested
+ * value, keeping the public state untouched. The returned controller's
+ * `commit` is the only way to update the key, mirroring how controlled React
+ * components treat props as the source of truth. Sequential and functional
+ * writes derive from the last requested value, so `toggle()` twice requests
+ * the original value again before anything commits.
+ */
+export function controlState(
+  store: Store | null | undefined,
+  key?: PropertyKey,
+  onRequest?: (value: any) => void,
+) {
+  if (!store) return;
+  invariant(key !== undefined && onRequest, "Missing key or onRequest");
+  const getControlEntry = getInternal(store, "getControlEntry");
+  const attachControl = getInternal(store, "attachControl");
+  // Join an entry that another registration already attached to this graph so
+  // both controllers share the same pending request and commit privilege.
+  const entry: ControlEntry = getControlEntry(key as string) ?? {
+    handlers: new Set(),
+    pending: null,
+    committing: 0,
+  };
+  entry.handlers.add(onRequest);
+  const detach = attachControl(key as string, entry);
+  return {
+    commit: (value: unknown) => {
+      entry.pending = null;
+      entry.committing += 1;
+      try {
+        store.setState(key as never, value);
+      } finally {
+        entry.committing -= 1;
+      }
+    },
+    release: () => {
+      entry.handlers.delete(onRequest);
+      detach();
+    },
+  };
+}
+
+export function getRequestedState<
+  T extends Store,
+  K extends keyof StoreState<T>,
+>(store: T, key: K): StoreState<T>[K];
+
+export function getRequestedState<
+  T extends Store,
+  K extends keyof StoreState<T>,
+>(store: T | null | undefined, key: K): StoreState<T>[K] | undefined;
+
+/**
+ * Returns the last requested value for a controlled key, falling back to the
+ * committed state. Listeners that derive state from a write in the same
+ * dispatch (for example, selecting the tab a `move` targeted) can use this to
+ * read the value the write asked for before the controlled prop commits it.
+ * For uncontrolled keys this is the same as reading the state directly.
+ */
+export function getRequestedState(
+  store: Store | null | undefined,
+  key: PropertyKey,
+) {
+  if (!store) return;
+  const entry = getInternal(store, "getControlEntry")(key as string);
+  if (entry?.pending) return entry.pending.value;
+  return store.getState()[key as never];
 }
 
 export function batch<T extends Store, K extends keyof StoreState<T>>(

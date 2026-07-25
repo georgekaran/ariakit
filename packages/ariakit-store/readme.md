@@ -35,6 +35,9 @@ This package is ESM-only and exposes a single public entrypoint.
 - [`init`](#init)
 - [`subscribe`](#subscribe)
 - [`sync`](#sync)
+- [`StateController`](#statecontroller)
+- [`controlState`](#controlstate)
+- [`getRequestedState`](#getrequestedstate)
 - [`batch`](#batch)
 - [`omit`](#omit)
 - [`pick`](#pick)
@@ -138,6 +141,71 @@ function sync<T extends Store, K extends keyof StoreState<T>>(
 ```
 
 Registers a listener function that's called immediately and synchronously whenever the store state changes.
+
+<div align="right">
+  <a href="#api-reference">&uarr; back to top</a>
+</div>
+
+### `StateController`
+
+```ts
+interface StateController<T> {
+  /**
+   * Commits a controlled prop value to the store. This is the only path that
+   * updates the public state of a controlled key: it notifies subscribers
+   * once and propagates through composed stores. Committing the current value
+   * only clears the pending request.
+   */
+  commit: (value: T) => void;
+  /**
+   * Releases control of the key. The store keeps the last committed value and
+   * becomes writable again.
+   */
+  release: () => void;
+}
+```
+
+The object returned by `controlState`, used to commit controlled prop values and to release control of the key.
+
+<div align="right">
+  <a href="#api-reference">&uarr; back to top</a>
+</div>
+
+### `controlState`
+
+```ts
+function controlState<T extends Store, K extends keyof StoreState<T>>(
+  store: T,
+  key: K,
+  onRequest: (value: StoreState<T>[K]) => void,
+): StateController<StoreState<T>[K]>;
+function controlState<T extends Store, K extends keyof StoreState<T>>(
+  store: T | null | undefined,
+  key: K,
+  onRequest: (value: StoreState<T>[K]) => void,
+): T extends Store ? StateController<StoreState<T>[K]> : void;
+```
+
+Controls a state key: writes to the key anywhere in the composed store graph stop committing and instead call `onRequest` with the requested value, keeping the public state untouched. The returned controller's `commit` is the only way to update the key, mirroring how controlled React components treat props as the source of truth. Sequential and functional writes derive from the last requested value, so `toggle()` twice requests the original value again before anything commits.
+
+<div align="right">
+  <a href="#api-reference">&uarr; back to top</a>
+</div>
+
+### `getRequestedState`
+
+```ts
+function getRequestedState<T extends Store, K extends keyof StoreState<T>>(
+  store: T,
+  key: K,
+): StoreState<T>[K];
+function getRequestedState<T extends Store, K extends keyof StoreState<T>>(
+  store: T | null | undefined,
+  key: K,
+): StoreState<T>[K] | undefined;
+```
+
+Returns the last requested value for a controlled key, falling back to the committed state. Listeners that derive state from a write in the same dispatch (for example, selecting the tab a `move` targeted) can use this to read the value the write asked for before the controlled prop commits it. For uncontrolled keys this is the same as reading the state directly.
 
 <div align="right">
   <a href="#api-reference">&uarr; back to top</a>
