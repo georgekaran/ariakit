@@ -102,6 +102,9 @@ export const useSelect = createHook<TagName, SelectOptions>(function useSelect({
   );
 
   const onKeyDownProp = props.onKeyDown;
+  // Focusable overwrites this prop on the object it returns, so the hidden
+  // native select below must read the value the consumer passed in.
+  const disabledProp = props.disabled;
   const showOnKeyDownProp = useBooleanEvent(showOnKeyDown);
   const moveOnKeyDownProp = useBooleanEvent(moveOnKeyDown);
   const placement = useStoreState(store, "placement");
@@ -208,7 +211,7 @@ export const useSelect = createHook<TagName, SelectOptions>(function useSelect({
             name={name}
             form={form}
             required={required}
-            disabled={props.disabled}
+            disabled={disabledProp}
             value={value}
             multiple={multiSelectable}
             // Even though this element is visually hidden and is not
@@ -256,7 +259,7 @@ export const useSelect = createHook<TagName, SelectOptions>(function useSelect({
       value,
       multiSelectable,
       values,
-      props.disabled,
+      disabledProp,
     ],
   );
 
