@@ -45,18 +45,32 @@ store.getState().open; // false until React re-renders with open={true}
 Value-only controlled props (a value prop without a setter) are now strictly
 read-only: store writes to those keys are ignored instead of taking effect
 until the next reconciliation. Setter-only props (a setter without a value
-prop) keep their current behavior: the store stays uncontrolled and the setter
-observes committed changes.
+prop) keep the store uncontrolled and observe committed changes, and they are
+now also called when another controller in the store graph refuses a request,
+so a component that uses its setter prop to intercept an update (the dialog
+does this to fire its cancelable `close` event) still hears about it. The
+setter is called once per update either way.
 
-`@ariakit/store` gains two low-level functions supporting this model:
+`@ariakit/store` gains three low-level functions supporting this model:
 `controlState(store, key, onRequest)` registers a controller that turns writes
 to the key into requests across the composed store graph and returns
-`{ commit, release }`, and `getRequestedState(store, key)` returns the last
-requested value (falling back to the committed state) for listeners that
-derive state from a write in the same dispatch.
+`{ commit, release }`, `observeRequests(store, key, listener)` listens to
+requests without controlling the key, and `getRequestedState(store, key)`
+returns the last requested value (falling back to the committed state) for
+listeners that derive state from a write in the same dispatch.
+
+Composite movement (`next`, `previous`, `up`, `down`) derives from the
+requested
+[`activeId`](https://ariakit.com/reference/composite-provider#activeid) too, so
+setting it and moving from it in the same dispatch still chains while the
+controlled prop catches up.
 
 Focus behavior fixes that follow from the new model: dialogs no longer treat
 their own focus restoration as an outside interaction (a dialog opened while
-another closes stays open), and a close prevented through
+another closes stays open), a close prevented through
 [`onClose`](https://ariakit.com/reference/dialog#onclose) no longer suppresses
-focus restoration on a later, accepted close.
+focus restoration on a later, accepted close, and activating a manual
+[`Tab`](https://ariakit.com/reference/tab) whose
+[`selectedId`](https://ariakit.com/reference/tab-provider#selectedid) is
+controlled asynchronously no longer bounces focus to the previously selected
+tab while the value commits ([#6888](https://github.com/ariakit/ariakit/issues/6888)).
