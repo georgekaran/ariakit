@@ -51,6 +51,17 @@ interface ControlEntry {
    */
   handlers: Set<(value: any) => void>;
   /**
+   * Number of active `controlState` registrations. Writes only turn into
+   * requests while this is greater than zero, so an entry that carries nothing
+   * but `observeRequests` listeners leaves the key writable.
+   */
+  controllers: number;
+  /**
+   * Listeners registered through `observeRequests`. Notified alongside the
+   * handlers, but they don't control the key.
+   */
+  observers: Set<(value: any) => void>;
+  /**
    * The last requested value. Subsequent writes derive from it so sequential
    * and functional updates chain like React state updates. Cleared on commit.
    */
@@ -822,7 +833,7 @@ export function createStore<S extends State>(
     // store already committed, which can only have passed through the same
     // entry's commit.
     const controlEntry = fromStores ? undefined : storeGetControlEntry(key);
-    if (controlEntry && !controlEntry.committing) {
+    if (controlEntry?.controllers && !controlEntry.committing) {
       const { pending } = controlEntry;
       const baseValue = pending ? (pending.value as S[typeof key]) : state[key];
       const nextValue = applyState(value, () => baseValue);
@@ -830,6 +841,12 @@ export function createStore<S extends State>(
       controlEntry.pending = { value: nextValue };
       for (const handler of [...controlEntry.handlers]) {
         handler(nextValue);
+      }
+      // Observers hear the request whether or not a handler accepts it, so
+      // consumers that only watch the key (a setter prop without a value prop)
+      // still learn about updates their controller refused.
+      for (const observer of [...controlEntry.observers]) {
+        observer(nextValue);
       }
       return;
     }
@@ -1078,12 +1095,9 @@ export function controlState(
   const attachControl = getInternal(store, "attachControl");
   // Join an entry that another registration already attached to this graph so
   // both controllers share the same pending request and commit privilege.
-  const entry: ControlEntry = getControlEntry(key as string) ?? {
-    handlers: new Set(),
-    pending: null,
-    committing: 0,
-  };
+  const entry: ControlEntry = getControlEntry(key as string) ?? createEntry();
   entry.handlers.add(onRequest);
+  entry.controllers += 1;
   const detach = attachControl(key as string, entry);
   return {
     commit: (value: unknown) => {
@@ -1097,8 +1111,56 @@ export function controlState(
     },
     release: () => {
       entry.handlers.delete(onRequest);
+      entry.controllers -= 1;
+      // A released controller leaves no pending request behind: the key
+      // becomes writable again and a stale request would rebase the next write
+      // onto a value the store never committed.
+      if (!entry.controllers) {
+        entry.pending = null;
+      }
       detach();
     },
+  };
+}
+
+function createEntry(): ControlEntry {
+  return {
+    handlers: new Set(),
+    controllers: 0,
+    observers: new Set(),
+    pending: null,
+    committing: 0,
+  };
+}
+
+export function observeRequests<T extends Store, K extends keyof StoreState<T>>(
+  store: T | null | undefined,
+  key: K,
+  listener: (value: StoreState<T>[K]) => void,
+): () => void;
+
+/**
+ * Registers a listener that's called when a write to a controlled key is
+ * requested, without controlling the key: on its own it leaves writes
+ * committing as usual. Unlike `subscribe`, it reports updates that the
+ * controller refused, which is what a setter prop passed without its value
+ * prop needs to observe.
+ */
+export function observeRequests(
+  store: Store | null | undefined,
+  key?: PropertyKey,
+  listener?: (value: any) => void,
+) {
+  if (!store) return noop;
+  invariant(key !== undefined && listener, "Missing key or listener");
+  const getControlEntry = getInternal(store, "getControlEntry");
+  const attachControl = getInternal(store, "attachControl");
+  const entry: ControlEntry = getControlEntry(key as string) ?? createEntry();
+  entry.observers.add(listener);
+  const detach = attachControl(key as string, entry);
+  return () => {
+    entry.observers.delete(listener);
+    detach();
   };
 }
 

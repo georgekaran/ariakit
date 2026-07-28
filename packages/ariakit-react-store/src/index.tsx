@@ -3,7 +3,7 @@ import {
   useLiveRef,
   useSafeLayoutEffect,
 } from "@ariakit/react-utils";
-import { controlState, init, subscribe } from "@ariakit/store";
+import { controlState, init, observeRequests, subscribe } from "@ariakit/store";
 import type {
   Store as CoreStore,
   State,
@@ -422,6 +422,7 @@ export function useStoreProps<
   const hasValue = value !== undefined;
   const propsRef = useLiveRef({ value, setValue });
   const controllerRef = React.useRef<StateController<S[K]> | null>(null);
+  const reportedRequestRef = React.useRef<{ value: unknown } | null>(null);
 
   // Calls setValue when the state value changes. While controlled, commits of
   // the own value prop are suppressed by the isSameValue check, so this only
@@ -433,9 +434,30 @@ export function useStoreProps<
       if (!setValue) return;
       if (isSameValue(state[key], prev[key])) return;
       if (isSameValue(state[key], value)) return;
+      const reported = reportedRequestRef.current;
+      reportedRequestRef.current = null;
+      // Committing a request this setter was already told about is the same
+      // update, not a second one.
+      if (reported && isSameValue(state[key], reported.value)) return;
       setValue(state[key]);
     });
   }, [store, key, hasSetValue]);
+
+  // Reports requests to a setter prop passed without its value prop. While
+  // another controller owns the key, a write it refuses never reaches the
+  // commit path above, so this is the only way such a setter hears about it.
+  useSafeLayoutEffect(() => {
+    if (!hasSetValue) return;
+    if (hasValue) return;
+    return observeRequests(store, key, (value) => {
+      // Held until the next commit rather than for a fixed time: a request
+      // accepted outside a React event commits in a later task. A refused
+      // request leaves the marker behind, so the one commit it can swallow is
+      // an unrequested change back to the same value the setter just saw.
+      reportedRequestRef.current = { value };
+      propsRef.current.setValue?.(value);
+    });
+  }, [store, key, hasSetValue, hasValue]);
 
   // Takes control of the key while the value prop is provided. Requests are
   // forwarded to the current setValue prop, which may accept the update by

@@ -284,3 +284,65 @@ test("removing the value prop makes the store uncontrolled again", async () => {
   });
   expect(store?.getState().open).toBe(false);
 });
+
+// A dialog passes setOpen without an open prop to hear about close attempts,
+// while the consumer above it controls open. A refused close still has to
+// reach the dialog so it can fire its close event.
+test("setter-only prop hears a request the controlling prop refuses", async () => {
+  let store: CoreStore<TestState> | undefined;
+  const setOpen = vi.fn();
+  const observeOpen = vi.fn();
+
+  function Test() {
+    const [s] = useStore(
+      (p: TestProps) => createStore<TestState>({ open: !!p.open }),
+      { open: true, setOpen },
+    );
+    // The value prop never changes, so the request is refused.
+    useStoreProps(s, { open: true, setOpen }, "open", "setOpen");
+    useStoreProps(s, { setOpen: observeOpen }, "open", "setOpen");
+    store = s;
+    return null;
+  }
+
+  await render(<Test />);
+  const storeValues = trackStore(store);
+
+  await dispatchAsync(() => {
+    store?.setState("open", false);
+  });
+
+  expect(store?.getState().open).toBe(true);
+  expect(storeValues).toEqual([]);
+  expect(setOpen).toHaveBeenCalledWith(false);
+  expect(observeOpen).toHaveBeenCalledTimes(1);
+  expect(observeOpen).toHaveBeenCalledWith(false);
+});
+
+test("setter-only prop is notified once when the request commits", async () => {
+  let store: CoreStore<TestState> | undefined;
+  const observeOpen = vi.fn();
+
+  function Test() {
+    const [open, setOpen] = React.useState(true);
+    const [s] = useStore(
+      (p: TestProps) => createStore<TestState>({ open: !!p.open }),
+      { open },
+    );
+    useStoreProps(s, { open, setOpen }, "open", "setOpen");
+    useStoreProps(s, { setOpen: observeOpen }, "open", "setOpen");
+    store = s;
+    return null;
+  }
+
+  await render(<Test />);
+
+  await dispatchAsync(() => {
+    store?.setState("open", false);
+  });
+
+  // The request and the commit that follows it are one update, not two.
+  expect(store?.getState().open).toBe(false);
+  expect(observeOpen).toHaveBeenCalledTimes(1);
+  expect(observeOpen).toHaveBeenCalledWith(false);
+});

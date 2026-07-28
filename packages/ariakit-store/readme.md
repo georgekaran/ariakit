@@ -37,6 +37,7 @@ This package is ESM-only and exposes a single public entrypoint.
 - [`sync`](#sync)
 - [`StateController`](#statecontroller)
 - [`controlState`](#controlstate)
+- [`observeRequests`](#observerequests)
 - [`getRequestedState`](#getrequestedstate)
 - [`batch`](#batch)
 - [`omit`](#omit)
@@ -187,6 +188,22 @@ function controlState<T extends Store, K extends keyof StoreState<T>>(
 ```
 
 Controls a state key: writes to the key anywhere in the composed store graph stop committing and instead call `onRequest` with the requested value, keeping the public state untouched. The returned controller's `commit` is the only way to update the key, mirroring how controlled React components treat props as the source of truth. Sequential and functional writes derive from the last requested value, so `toggle()` twice requests the original value again before anything commits.
+
+<div align="right">
+  <a href="#api-reference">&uarr; back to top</a>
+</div>
+
+### `observeRequests`
+
+```ts
+function observeRequests<T extends Store, K extends keyof StoreState<T>>(
+  store: T | null | undefined,
+  key: K,
+  listener: (value: StoreState<T>[K]) => void,
+): () => void;
+```
+
+Registers a listener that's called when a write to a controlled key is requested, without controlling the key: on its own it leaves writes committing as usual. Unlike `subscribe`, it reports updates that the controller refused, which is what a setter prop passed without its value prop needs to observe.
 
 <div align="right">
   <a href="#api-reference">&uarr; back to top</a>

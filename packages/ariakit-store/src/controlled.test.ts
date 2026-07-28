@@ -5,6 +5,7 @@ import {
   createStore,
   init,
   mergeStore,
+  observeRequests,
   omit,
   setup,
   subscribe,
@@ -314,5 +315,86 @@ test("writes to other controlled keys during a commit are requests", () => {
 
   openController.release();
   mountedController.release();
+  uninit();
+});
+
+test("observing requests alone leaves the key writable", () => {
+  const store = createStore<TestState>({ open: false });
+  const uninit = init(store);
+  const requests: boolean[] = [];
+  const unobserve = observeRequests(store, "open", (value) =>
+    requests.push(value),
+  );
+
+  store.setState("open", true);
+
+  // Nothing controls the key, so the write commits and there's no request to
+  // report.
+  expect(store.getState().open).toBe(true);
+  expect(requests).toEqual([]);
+
+  unobserve();
+  uninit();
+});
+
+test("observers are notified of requests a controller refuses", () => {
+  const store = createStore<TestState>({ open: false });
+  const uninit = init(store);
+  const observed: boolean[] = [];
+  const unobserve = observeRequests(store, "open", (value) =>
+    observed.push(value),
+  );
+  const controller = controlState(store, "open", () => {});
+
+  store.setState("open", true);
+
+  expect(store.getState().open).toBe(false);
+  expect(observed).toEqual([true]);
+
+  controller.release();
+  unobserve();
+  uninit();
+});
+
+test("observers registered before the controller share its entry", () => {
+  const store = createStore<TestState>({ open: false });
+  const uninit = init(store);
+  const observed: boolean[] = [];
+  // The dialog registers its observer in a child effect, before the provider
+  // controlling the key registers in a parent effect.
+  const unobserve = observeRequests(store, "open", (value) =>
+    observed.push(value),
+  );
+  const controller = controlState(store, "open", () => {});
+
+  store.setState("open", true);
+  expect(observed).toEqual([true]);
+
+  // Releasing the controller leaves the observer attached and the key writable.
+  controller.release();
+  store.setState("open", true);
+  expect(store.getState().open).toBe(true);
+  expect(observed).toEqual([true]);
+
+  unobserve();
+  uninit();
+});
+
+test("observers do not hear a controller's own commit", () => {
+  const store = createStore<TestState>({ open: false });
+  const uninit = init(store);
+  const observed: boolean[] = [];
+  const unobserve = observeRequests(store, "open", (value) =>
+    observed.push(value),
+  );
+  const controller = controlState(store, "open", () => {});
+
+  controller.commit(true);
+
+  expect(store.getState().open).toBe(true);
+  expect(observed).toEqual([]);
+
+  controller.release();
+  unobserve();
   uninit();
 });
