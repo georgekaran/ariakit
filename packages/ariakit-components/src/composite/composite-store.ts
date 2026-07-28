@@ -1,4 +1,4 @@
-import { createStore, setup, sync } from "@ariakit/store";
+import { createStore, getRequestedState, setup, sync } from "@ariakit/store";
 import type { Store, StoreOptions, StoreProps } from "@ariakit/store";
 import { flatten2DArray, reverseArray, defaultValue } from "@ariakit/utils";
 import type { SetState } from "@ariakit/utils";
@@ -324,7 +324,10 @@ export function createCompositeStore<
     const defaultState = composite.getState();
     const {
       skip = 0,
-      activeId = defaultState.activeId,
+      // When activeId is controlled, a write made earlier in the same dispatch
+      // has only requested the new value, so movement derives from the
+      // requested one to keep sequential writes chaining like React state.
+      activeId = getRequestedState(composite, "activeId"),
       focusShift = defaultState.focusShift,
       focusLoop = defaultState.focusLoop,
       focusWrap = defaultState.focusWrap,
