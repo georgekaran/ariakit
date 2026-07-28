@@ -3,10 +3,10 @@ name: docs
 on:
   push:
     branches: [main]
-  pull_request:
+  workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: docs-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -30,6 +30,8 @@ jobs:
 
       - name: Set up environment
         uses: ./.github/workflows/setup
+        with:
+          filters: ./packages/*...
 
       - name: Generate docs
         run: pnpm run docs

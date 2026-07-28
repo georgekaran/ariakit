@@ -3,7 +3,7 @@ name: plus
 on:
   push:
     branches: [main, next]
-  pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -23,14 +23,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up environment
         uses: ./.github/workflows/setup
+        with:
+          filters: website...
 
       - name: Install playwright
         uses: ./.github/workflows/install-playwright
         with:
           engine: chromium
+          workspace: website
 
       - name: Cache Next.js
         uses: actions/cache@v6
@@ -44,12 +49,12 @@ jobs:
 
       - name: Test
         id: test
-        run: xvfb-run pnpm run test-plus-headed
+        run: xvfb-run pnpm -F website test --workers=1 --headed
 
       - name: Upload test results to GitHub
         if: failure() && steps.test.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: plus-test-results
-          path: test-results
+          path: website/test-results
           retention-days: 30

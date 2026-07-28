@@ -45,7 +45,10 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CompositeOptions } from "../composite/composite.tsx";
 import { useComposite } from "../composite/composite.tsx";
-import { useComboboxProviderContext } from "./combobox-context.tsx";
+import {
+  useComboboxProviderContext,
+  useComboboxScopedContext,
+} from "./combobox-context.tsx";
 import type {
   ComboboxStore,
   ComboboxStoreSelectedValue,
@@ -139,8 +142,9 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
     disabled,
     ...props
   }) {
+    const scopedContext = useComboboxScopedContext(true);
     const context = useComboboxProviderContext();
-    store = store || context;
+    store = store || context || scopedContext;
 
     invariant(
       store,
@@ -182,7 +186,7 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
       setCanInline(true);
     }, [inline]);
 
-    const storeValue = useStoreState(store, "value");
+    const storeInputValue = useStoreState(store, "inputValue");
     const selectedValue = useStoreState(store, ["selectedValue"], (state) => {
       if (!name) return;
       if (!Array.isArray(state.selectedValue)) return;
@@ -228,14 +232,14 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
     const open = useStoreState(store, "open");
     const contentElement = useStoreState(store, "contentElement");
 
-    // The current input value may differ from state.value when
+    // The current input value may differ from state.inputValue when
     // autoComplete is either "both" or "inline", in which case it will be
     // the active item value or a combination of the input value and the active
     // item value if it's the first item and it's been auto selected. This will
     // only affect the element's value, not the combobox state.
-    const value = useMemo(() => {
-      if (!inline) return storeValue;
-      if (!canInline) return storeValue;
+    const inputValue = useMemo(() => {
+      if (!inline) return storeInputValue;
+      if (!canInline) return storeInputValue;
       const firstItemAutoSelected = isFirstItemAutoSelected(
         items,
         inlineActiveValue,
@@ -245,14 +249,21 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
         // If the first item is auto selected, we should append the completion
         // string to the end of the value. This will be highlited in the effect
         // below.
-        if (hasCompletionString(storeValue, inlineActiveValue)) {
-          const slice = inlineActiveValue?.slice(storeValue.length) || "";
-          return storeValue + slice;
+        if (hasCompletionString(storeInputValue, inlineActiveValue)) {
+          const slice = inlineActiveValue?.slice(storeInputValue.length) || "";
+          return storeInputValue + slice;
         }
-        return storeValue;
+        return storeInputValue;
       }
-      return inlineActiveValue || storeValue;
-    }, [inline, canInline, items, inlineActiveValue, autoSelect, storeValue]);
+      return inlineActiveValue || storeInputValue;
+    }, [
+      inline,
+      canInline,
+      items,
+      inlineActiveValue,
+      autoSelect,
+      storeInputValue,
+    ]);
 
     // Listen to the combobox-item-move event that's dispacthed the ComboboxItem
     // component so we can enable the inline autocomplete when the user moves
@@ -278,7 +289,7 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
         autoSelect,
       );
       if (!firstItemAutoSelected) return;
-      if (!hasCompletionString(storeValue, inlineActiveValue)) return;
+      if (!hasCompletionString(storeInputValue, inlineActiveValue)) return;
       let cleanup = noop;
       // For some reason, this setSelectionRange may run before the value is
       // updated in the DOM. We're using a microtask to make sure it runs after
@@ -288,7 +299,7 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
         const element = ref.current;
         if (!element) return;
         const { start: prevStart, end: prevEnd } = getTextboxSelection(element);
-        const nextStart = storeValue.length;
+        const nextStart = storeInputValue.length;
         const nextEnd = inlineActiveValue.length;
         setSelectionRange(element, nextStart, nextEnd);
         cleanup = () => {
@@ -312,7 +323,7 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
       inlineActiveValue,
       items,
       autoSelect,
-      storeValue,
+      storeInputValue,
     ]);
 
     const getAutoSelectIdProp = useEvent(getAutoSelectId);
@@ -378,10 +389,10 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
     // programmatically.
     useSafeLayoutEffect(() => {
       userScrolledRef.current = false;
-      if (!storeValue) return;
+      if (!storeInputValue) return;
       if (composingRef.current) return;
       canAutoSelectRef.current = true;
-    }, [storeValue]);
+    }, [storeInputValue]);
 
     // Reset the changed flag when the popover is not open so we don't try to
     // auto select an item after the popover closes (for example, in the middle
@@ -409,7 +420,13 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
       if (composingRef.current) return;
       if (!canAutoSelect && (!resetValueOnSelect || userScrolledRef.current))
         return;
-      const { baseElement, contentElement, activeId } = store.getState();
+      const {
+        baseElement,
+        contentElement,
+        activeId,
+        selectElement,
+        selectedValue,
+      } = store.getState();
       if (baseElement && !hasFocus(baseElement)) return;
       // The data-placing attribute is an internal state added by the Popover
       // component. We can observe it to know when the popover is done placing
@@ -421,7 +438,15 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
         observer.observe(contentElement, { attributeFilter: ["data-placing"] });
         return () => observer.disconnect();
       }
-      if (autoSelect && canAutoSelect) {
+      const activeValue = store.item(activeId)?.value;
+      const activeValueSelected =
+        activeValue != null &&
+        (Array.isArray(selectedValue)
+          ? selectedValue.includes(activeValue)
+          : selectedValue === activeValue);
+      const preserveSelectedValue =
+        !!selectElement && !storeInputValue && activeValueSelected;
+      if (autoSelect && canAutoSelect && !preserveSelectedValue) {
         const userAutoSelectId = getAutoSelectIdProp(items);
         const autoSelectId =
           userAutoSelectId !== undefined
@@ -484,7 +509,7 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
       store,
       open,
       valueUpdated,
-      storeValue,
+      storeInputValue,
       autoSelect,
       resetValueOnSelect,
       getAutoSelectIdProp,
@@ -502,7 +527,7 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
       );
       const onBlur = (event: FocusEvent) => {
         if (elements.every((el) => isFocusEventOutside(event, el))) {
-          store?.setValue(value);
+          store?.setInputValue(inputValue);
         }
       };
       for (const element of elements) {
@@ -513,7 +538,7 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
           element.removeEventListener("focusout", onBlur);
         }
       };
-    }, [inline, contentElement, store, value]);
+    }, [inline, contentElement, store, inputValue]);
 
     const canShow = (event: SyntheticEvent) => {
       const currentTarget = event.currentTarget as HTMLType;
@@ -550,15 +575,15 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
         }
       }
       if (setValueOnChangeProp(event)) {
-        const isSameValue = value === store.getState().value;
-        store.setValue(value);
+        const isSameValue = value === store.getState().inputValue;
+        store.setInputValue(value);
         // When the value is not set synchronously, the selection range may be
         // lost. See combobox-group "keep caret position when typing" test.
         queueMicrotask(() => {
           setSelectionRange(currentTarget, selectionStart, selectionEnd);
         });
         if (inline && autoSelect && isSameValue) {
-          // The store.setValue(event.target.value) above may not trigger a
+          // The store.setInputValue(event.target.value) above may not trigger a
           // state update. For example, say the first item starts with "t". The
           // user starts typing "t", then the first item is auto selected and
           // the inline completion string is appended and highlited. The user
@@ -628,7 +653,7 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
         store.setActiveId(null);
       }
       if (setValueOnClickProp(event)) {
-        store.setValue(value);
+        store.setInputValue(inputValue);
       }
       if (showOnClickProp(event)) {
         queueBeforeEvent(event.currentTarget, "mouseup", store.show);
@@ -744,13 +769,18 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
       "aria-expanded": open,
       "aria-controls": contentElement?.id,
       "data-active-item": isActiveItem || undefined,
-      value,
+      value: inputValue,
       ...props,
       id,
       name: multiSelectable ? undefined : name,
       form,
       disabled,
-      ref: useMergeRefs(ref, composite ? undefined : setBaseElement, props.ref),
+      ref: useMergeRefs(
+        ref,
+        store.setInputElement,
+        composite ? undefined : setBaseElement,
+        props.ref,
+      ),
       onChange,
       onCompositionStart,
       onCompositionEnd,
@@ -778,6 +808,8 @@ export const useCombobox = createHook<TagName, ComboboxOptions>(
 );
 
 /**
+ * **Alias**: [`ComboboxInput`](https://ariakit.com/reference/combobox-input)
+ *
  * Renders a combobox input element that can be used to filter a list of items.
  * @see https://ariakit.com/components/combobox
  * @example
@@ -872,14 +904,16 @@ export interface ComboboxOptions<
   ) => string | null | undefined;
   /**
    * Whether the items will be filtered based on
-   * [`value`](https://ariakit.com/reference/combobox-provider#value) and
+   * [`inputValue`](https://ariakit.com/reference/combobox-provider#inputvalue)
+   * and
    * whether the input value will temporarily change based on the active item.
    *
    * This prop is based on the standard
    * [`aria-autocomplete`](https://w3c.github.io/aria/#aria-autocomplete)
    * attribute, accepting the same values:
    * - `list` (default): indicates that the items will be dynamically rendered
-   *   based on [`value`](https://ariakit.com/reference/combobox-provider#value)
+   *   based on
+   *   [`inputValue`](https://ariakit.com/reference/combobox-provider#inputvalue)
    *   and the input value will _not_ change based on the active item. The
    *   filtering logic must be implemented by the consumer of this component.
    * - `inline`: indicates that the items are static, that is, they won't be
@@ -887,7 +921,8 @@ export interface ComboboxOptions<
    *   item. Ariakit will automatically provide the inline autocompletion
    *   behavior.
    * - `both`: indicates that the items will be dynamically rendered based on
-   *   [`value`](https://ariakit.com/reference/combobox-provider#value) and the
+   *   [`inputValue`](https://ariakit.com/reference/combobox-provider#inputvalue)
+   *   and the
    *   input value will temporarily change based on the active item. The
    *   filtering logic must be implemented by the consumer of this component,
    *   whereas Ariakit will automatically provide the inline autocompletion
@@ -997,10 +1032,12 @@ export interface ComboboxOptions<
   showOnKeyPress?: BooleanOrCallback<ReactKeyboardEvent<HTMLElement>>;
   /**
    * Whether the combobox
-   * [`value`](https://ariakit.com/reference/combobox-provider#value) state
+   * [`inputValue`](https://ariakit.com/reference/combobox-provider#inputvalue)
+   * state
    * should be updated when the input value changes. This is useful if you want
    * to customize how the store
-   * [`value`](https://ariakit.com/reference/combobox-provider#value) is updated
+   * [`inputValue`](https://ariakit.com/reference/combobox-provider#inputvalue)
+   * is updated
    * based on the input element's value.
    *
    * Live examples:
@@ -1011,14 +1048,15 @@ export interface ComboboxOptions<
   setValueOnChange?: BooleanOrCallback<ChangeEvent<HTMLElement>>;
   /**
    * Whether the combobox
-   * [`value`](https://ariakit.com/reference/combobox-provider#value) state
+   * [`inputValue`](https://ariakit.com/reference/combobox-provider#inputvalue)
+   * state
    * should be updated when the combobox input element gets clicked. This
    * usually only applies when
    * [`autoComplete`](https://ariakit.com/reference/combobox#autocomplete) is
    * `both` or `inline`, because the input value will temporarily change based
    * on the active item and the store
-   * [`value`](https://ariakit.com/reference/combobox-provider#value) will not
-   * be updated until the user confirms the selection.
+   * [`inputValue`](https://ariakit.com/reference/combobox-provider#inputvalue)
+   * will not be updated until the user confirms the selection.
    * @default true
    */
   setValueOnClick?: BooleanOrCallback<MouseEvent<HTMLElement>>;

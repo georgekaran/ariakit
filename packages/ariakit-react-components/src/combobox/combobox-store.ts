@@ -2,7 +2,7 @@ import * as Core from "@ariakit/components/combobox/combobox-store";
 import { useStore, useStoreProps } from "@ariakit/react-store";
 import type { Store } from "@ariakit/react-store";
 import { useUpdateEffect } from "@ariakit/react-utils";
-import type { PickRequired } from "@ariakit/utils";
+import type { BivariantCallback, PickRequired } from "@ariakit/utils";
 import type {
   CompositeStoreFunctions,
   CompositeStoreOptions,
@@ -39,8 +39,13 @@ export function useComboboxStoreProps<T extends Core.ComboboxStore>(
 ) {
   useUpdateEffect(update, [props.tag]);
 
-  useStoreProps(store, props, "value", "setValue");
+  const inputValueProps = {
+    inputValue: props.inputValue ?? props.value,
+    setInputValue: props.setInputValue ?? props.setValue,
+  };
+  useStoreProps(store, inputValueProps, "inputValue", "setInputValue");
   useStoreProps(store, props, "selectedValue", "setSelectedValue");
+  useStoreProps(store, props, "selectOnMove");
   useStoreProps(store, props, "resetValueOnHide");
   useStoreProps(store, props, "resetValueOnSelect");
 
@@ -121,8 +126,8 @@ export interface ComboboxStoreOptions<
     PopoverStoreOptions {
   /**
    * A callback that gets called when the
-   * [`value`](https://ariakit.com/reference/combobox-provider#value) state
-   * changes.
+   * [`inputValue`](https://ariakit.com/reference/combobox-provider#inputvalue)
+   * state changes.
    *
    * Live examples:
    * - [Combobox with integrated
@@ -133,6 +138,15 @@ export interface ComboboxStoreOptions<
    *   Combobox](https://ariakit.com/examples/combobox-multiple)
    * - [Menu with Combobox](https://ariakit.com/examples/menu-combobox)
    * - [Select with Combobox](https://ariakit.com/examples/select-combobox)
+   */
+  setInputValue?: (value: ComboboxStoreState<T>["inputValue"]) => void;
+  /**
+   * A callback that gets called when the
+   * [`inputValue`](https://ariakit.com/reference/combobox-provider#inputvalue)
+   * state changes.
+   * @deprecated Use
+   * [`setInputValue`](https://ariakit.com/reference/combobox-provider#setinputvalue)
+   * instead.
    */
   setValue?: (value: ComboboxStoreState<T>["value"]) => void;
   /**
@@ -145,7 +159,9 @@ export interface ComboboxStoreOptions<
    * - [Multi-selectable
    *   Combobox](https://ariakit.com/examples/combobox-multiple)
    */
-  setSelectedValue?: (value: ComboboxStoreState<T>["selectedValue"]) => void;
+  setSelectedValue?: BivariantCallback<
+    (value: ComboboxStoreState<T>["selectedValue"]) => void
+  >;
   /**
    * A reference to a [tag store](https://ariakit.com/apis/use-tag-store). It's
    * automatically set when rendering a combobox within a tag list.
