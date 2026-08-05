@@ -4,7 +4,9 @@ import {
   TreeItem,
   TreeItemArrow,
   TreeProvider,
+  useTreeStore,
 } from "@ariakit/react";
+import type { TreeStoreItem } from "@ariakit/react";
 import { useTreeLevel } from "@ariakit/react-components/tree/tree-level";
 import { useTreeContext } from "@ariakit/react/tree";
 import type { ComponentProps, CSSProperties, ElementRef } from "react";
@@ -605,6 +607,73 @@ function ToggleBehavior() {
   );
 }
 
+const directItems: TreeStoreItem[] = [
+  { id: "items-root", folder: true, folderPath: [] },
+  { id: "items-a", folderPath: ["items-root"] },
+  { id: "items-b", folderPath: ["items-root"] },
+];
+
+function DirectTreeProps() {
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const explicitStore = useTreeStore({
+    defaultExpandedIds: ["explicit-b"],
+  });
+
+  return (
+    <div>
+      <Tree
+        aria-label="Direct defaults"
+        defaultExpandedIds={["direct-default-root"]}
+      >
+        <TreeItem id="direct-default-root" label="Direct default root">
+          <TreeItem id="direct-default-child" label="Direct default child" />
+        </TreeItem>
+      </Tree>
+
+      <Tree
+        aria-label="Direct controlled"
+        expandedIds={expandedIds}
+        setExpandedIds={setExpandedIds}
+        selectedIds={selectedIds}
+        setSelectedIds={setSelectedIds}
+        selectionMode="single"
+      >
+        <TreeItem id="direct-controlled-root" label="Direct controlled root">
+          <TreeItem
+            id="direct-controlled-child"
+            label="Direct controlled child"
+          />
+        </TreeItem>
+      </Tree>
+      <div role="status" data-direct-state>
+        {`expanded:${expandedIds.join("|")} selected:${selectedIds.join("|")}`}
+      </div>
+
+      <Tree
+        aria-label="Direct items"
+        items={directItems}
+        defaultExpandedIds={["items-root"]}
+      >
+        <TreeItem id="items-root" folder label="Items root" />
+        <TreeItem id="items-a" folderPath={["items-root"]} label="Items a" />
+        <TreeItem id="items-b" folderPath={["items-root"]} label="Items b" />
+      </Tree>
+
+      <TreeProvider defaultExpandedIds={["explicit-a"]}>
+        <Tree aria-label="Explicit store precedence" store={explicitStore}>
+          <TreeItem id="explicit-a" label="Explicit A">
+            <TreeItem id="explicit-a-child" label="Explicit A child" />
+          </TreeItem>
+          <TreeItem id="explicit-b" label="Explicit B">
+            <TreeItem id="explicit-b-child" label="Explicit B child" />
+          </TreeItem>
+        </Tree>
+      </TreeProvider>
+    </div>
+  );
+}
+
 export default function Example() {
   return (
     <div>
@@ -623,6 +692,7 @@ export default function Example() {
       <Labels />
       <ArrowBehavior />
       <ToggleBehavior />
+      <DirectTreeProps />
       <TypedUsage />
       <Activation />
       <InvalidFolder />

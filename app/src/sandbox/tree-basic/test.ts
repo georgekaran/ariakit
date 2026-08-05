@@ -365,12 +365,12 @@ test("never lands on a collapsed descendant with page keys", async () => {
 test("activates through command semantics with Enter", async () => {
   await focus(act().treeitem.ensure("Act src"));
   await press.Enter();
+  // Several fixtures expose a status region; the activation one is the only
+  // one without a data-* marker.
   const activationStatus = q.status
     .all()
-    .find(
-      (element) =>
-        !element.hasAttribute("data-arrow-events") &&
-        !element.hasAttribute("data-toggle-events"),
+    .find((element) =>
+      element.getAttributeNames().every((name) => !name.startsWith("data-")),
     );
   expect(activationStatus).toHaveTextContent("act-src");
 });
@@ -773,4 +773,61 @@ test("leaves ignore both toggle options", async () => {
   await focus(item);
   await press.Enter();
   expect(item).not.toHaveAttribute("aria-expanded");
+});
+
+test("accepts uncontrolled expansion directly on Tree", () => {
+  const tree = q.within(q.tree.ensure("Direct defaults"));
+  expect(tree.treeitem.ensure("Direct default root")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(tree.treeitem.ensure("Direct default child")).toBeVisible();
+});
+
+test("keeps direct controlled expansion and selection authoritative", async () => {
+  const tree = q.within(q.tree.ensure("Direct controlled"));
+  const root = tree.treeitem.ensure("Direct controlled root");
+  await focus(root);
+  await press.ArrowRight();
+  expect(document.querySelector("[data-direct-state]")).toHaveTextContent(
+    "expanded:direct-controlled-root",
+  );
+  await click(tree.treeitem.ensure("Direct controlled child"));
+  expect(document.querySelector("[data-direct-state]")).toHaveTextContent(
+    "selected:direct-controlled-child",
+  );
+});
+
+test("uses complete items passed directly to Tree", () => {
+  const tree = q.within(q.tree.ensure("Direct items"));
+  expect(tree.treeitem.ensure("Items a")).toHaveAttribute("aria-setsize", "2");
+  expect(tree.treeitem.ensure("Items b")).toHaveAttribute("aria-posinset", "2");
+});
+
+test("gives an explicit store precedence over TreeProvider", () => {
+  const tree = q.within(q.tree.ensure("Explicit store precedence"));
+  expect(tree.treeitem.ensure("Explicit A")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  expect(tree.treeitem.ensure("Explicit B")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+});
+
+test("does not leak Tree store props to the DOM", () => {
+  const tree = q.tree.ensure("Direct controlled");
+  const names = tree.getAttributeNames().map((name) => name.toLowerCase());
+  for (const name of [
+    "expandedids",
+    "setexpandedids",
+    "selectedids",
+    "setselectedids",
+    "selectionmode",
+    "defaultexpandedids",
+    "items",
+  ]) {
+    expect(names).not.toContain(name);
+  }
 });

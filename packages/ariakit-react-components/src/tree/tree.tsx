@@ -37,29 +37,68 @@ type TagName = typeof TagName;
  * ```
  */
 export const useTree = createHook<TagName, TreeOptions>(function useTree({
+  // Every Tree store prop is partitioned out explicitly so none of them can
+  // reach the DOM as an unknown attribute.
   store: storeProp,
-  orientation: orientationProp,
+  id,
+  items,
+  defaultItems,
+  setItems,
+  activeId,
+  defaultActiveId,
+  setActiveId,
+  expandedIds,
+  defaultExpandedIds,
+  setExpandedIds,
+  selectedIds,
+  defaultSelectedIds,
+  setSelectedIds,
+  selectionMode,
+  selectionAttribute,
+  selectOnMove,
+  orientation,
   rtl,
   virtualFocus,
   focusLoop,
   focusWrap,
+  focusShift,
+  compositeElementInFocusOrder,
+  includesBaseElement,
   typeahead,
   ...props
 }) {
   const context = useTreeProviderContext();
-  storeProp = storeProp || context;
 
   const store = useTreeStore({
-    store: storeProp,
-    orientation: orientationProp,
+    store: storeProp || context,
+    id,
+    items,
+    defaultItems,
+    setItems,
+    activeId,
+    defaultActiveId,
+    setActiveId,
+    expandedIds,
+    defaultExpandedIds,
+    setExpandedIds,
+    selectedIds,
+    defaultSelectedIds,
+    setSelectedIds,
+    selectionMode,
+    selectionAttribute,
+    selectOnMove,
+    orientation,
     rtl,
     virtualFocus,
     focusLoop,
     focusWrap,
+    focusShift,
+    compositeElementInFocusOrder,
+    includesBaseElement,
   });
 
-  const orientation = useStoreState(store, "orientation");
-  const selectionMode = useStoreState(store, "selectionMode");
+  const orientationState = useStoreState(store, "orientation");
+  const selectionModeState = useStoreState(store, "selectionMode");
 
   props = useWrapElement(
     props,
@@ -75,10 +114,16 @@ export const useTree = createHook<TagName, TreeOptions>(function useTree({
     role: "tree",
     // Vertical is the implicit default, so it is never emitted. Multiple is the
     // only mode that needs the multiselectable state.
-    "aria-orientation": orientation === "horizontal" ? orientation : undefined,
-    "aria-multiselectable": selectionMode === "multiple" ? true : undefined,
+    "aria-orientation":
+      orientationState === "horizontal" ? orientationState : undefined,
+    "aria-multiselectable":
+      selectionModeState === "multiple" ? true : undefined,
     ...props,
   };
+
+  // `id` was partitioned out with the store props, so it is restored here as a
+  // host attribute.
+  props = { id, ...props } as typeof props & { id?: string };
 
   // Read at event time so typeahead always searches the currently visible
   // nodes rather than a snapshot from render.
@@ -125,12 +170,7 @@ export const Tree = forwardRef(function Tree(props: TreeProps) {
 });
 
 export interface TreeOptions<T extends ElementType = TagName>
-  extends
-    CompositeOptions<T>,
-    Pick<
-      TreeStoreProps,
-      "orientation" | "rtl" | "virtualFocus" | "focusLoop" | "focusWrap"
-    > {
+  extends CompositeOptions<T>, Omit<TreeStoreProps, "store"> {
   /**
    * Object returned by the
    * [`useTreeStore`](https://ariakit.com/reference/use-tree-store) hook. If not

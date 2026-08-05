@@ -171,7 +171,9 @@ export interface TreeRendererOptions<T extends ItemObject = ItemObject>
     >,
     // `virtualFocus` is enforced rather than configurable: see the note in
     // `useTreeRenderer`.
-    Omit<TreeOptions, "store" | "children" | "virtualFocus"> {
+    // `items` is the renderer's own complete dataset, and `virtualFocus` is
+    // enforced rather than configurable.
+    Omit<TreeOptions, "store" | "children" | "virtualFocus" | "items"> {
   /**
    * Object returned by the
    * [`useTreeStore`](https://ariakit.com/reference/use-tree-store) hook. If not
