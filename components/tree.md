@@ -95,13 +95,7 @@ The arrow is a non-focusable `aria-hidden` span, never a nested button, so the t
 
 ## Expansion controls
 
-| Interaction                 | Default                                         |
-| --------------------------- | ----------------------------------------------- |
-| Row click                   | Selects, then toggles the branch                |
-| Arrow click                 | Toggles only; never selects the row             |
-| <kbd>→</kbd> / <kbd>←</kbd> | Expand or enter; collapse or go to parent       |
-| <kbd>Enter</kbd>            | Command activation, then the row click behavior |
-| <kbd>Space</kbd>            | Selection only, never expansion                 |
+Clicking a row selects it, then toggles the branch, while clicking the arrow toggles only and never selects the row. <kbd>→</kbd> expands a collapsed branch or moves into it, and <kbd>←</kbd> collapses an expanded branch or moves to its parent. <kbd>Enter</kbd> performs command activation followed by the same behavior as a row click. <kbd>Space</kbd> is selection only and never expands.
 
 Set [`toggleOnClick={false}`](/reference/tree-item#toggleonclick) to keep clicks selection-only, and [`toggleOnKeyPress`](/reference/tree-item#toggleonkeypress) to make <kbd>Enter</kbd> toggle directly.
 
