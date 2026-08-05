@@ -284,6 +284,7 @@
     "./tree/tree-item": "./src/tree/tree-item.tsx",
     "./tree/tree-level": "./src/tree/tree-level.tsx",
     "./tree/tree-provider": "./src/tree/tree-provider.tsx",
+    "./tree/tree-renderer": "./src/tree/tree-renderer.tsx",
     "./tree/tree-store": "./src/tree/tree-store.ts",
     "./visually-hidden/visually-hidden": "./src/visually-hidden/visually-hidden.tsx",
     "./package.json": "./package.json"

@@ -83,11 +83,17 @@ export const useTree = createHook<TagName, TreeOptions>(function useTree({
   // Read at event time so typeahead always searches the currently visible
   // nodes rather than a snapshot from render.
   const getItems = useCallback(
-    (items: readonly CompositeStoreItem[]) =>
-      getVisibleTreeItems(
+    (items: readonly CompositeStoreItem[]) => {
+      const visibleItems = getVisibleTreeItems(
         items as readonly TreeStoreItem[],
         store.getState().expandedIds,
-      ),
+      );
+      // A controlled complete collection holds plain data objects with no
+      // element, which typeahead needs to recognize its own event target.
+      // Preferring the registered object restores that for mounted items;
+      // unmounted ones keep their data object and match on `typeaheadText`.
+      return visibleItems.map((item) => store.item(item.id) ?? item);
+    },
     [store],
   );
 
