@@ -168,6 +168,131 @@ the screen readers are asked about.
 - `pnpm test packages/ariakit-components/src/tree tree-basic tree-selection tree-focus tree-renderer tree-ssr tree-flat-at` — 163 passing
 - `pnpm -F app run test-chrome tree-basic tree-selection tree-focus tree-renderer tree-ssr tree-flat-at` — 29 passing
 
+## VoiceOver test script (macOS Safari)
+
+Follow this in order. Steps 1 and 2 are the release-blocking comparison;
+everything after is confirmation.
+
+### Setup
+
+1. Serve the fixture: `pnpm -F app run preview --port 4321`, then open
+   `http://localhost:4321/react/previews/tree-flat-at/` in **Safari**.
+2. Turn VoiceOver on with `Cmd`+`F5`.
+3. **Turn Quick Nav off.** Press `Left`+`Right` arrow together until VoiceOver
+   says "Quick Nav off". If Quick Nav is on, the arrow keys move the VoiceOver
+   cursor instead of reaching the tree and every result below is meaningless.
+4. Turn the caption panel on so speech becomes readable text: VoiceOver Utility
+   (`VO`+`F8`) -> **Visuals** -> **Caption Panel** -> "Show caption panel".
+5. `Tab` until focus lands in the first tree.
+
+### How to read the expectations
+
+The exact wording and the order of the parts differ between macOS versions, so
+none of the strings below are literal. What is being assessed is whether the
+**information** is present:
+
+- the item **name**
+- its **level**
+- its **position in set** ("2 of 2")
+- **expanded or collapsed**, for branches only
+
+A typical announcement sounds like
+`"src, expanded, 1 of 2, level 1"` or `"src, level 1, 1 of 2, expanded"`.
+Both count as the same result.
+
+Two specific failures to listen for:
+
+- A **leaf** that announces "collapsed" or "expanded". Leaves must never carry a
+  branch state.
+- A **level, position, or set size that is missing or wrong** in the flat tree
+  but correct in the nested control. That is the flat-only blocker.
+
+### Step 1 - Tree 1, "Flat project files"
+
+Hierarchy declared explicitly on every item. `src` and `components` start
+expanded.
+
+| #    | Key                         | Item           | Expect to hear                                                    |
+| ---- | --------------------------- | -------------- | ----------------------------------------------------------------- |
+| 1.1  | (enter tree)                | -              | the tree name "Flat project files", and that it is a tree         |
+| 1.2  | -                           | `src`          | name `src`, **level 1**, **1 of 2**, **expanded**                 |
+| 1.3  | `ArrowDown`                 | `components`   | name `components`, **level 2**, **1 of 2**, **expanded**          |
+| 1.4  | `ArrowDown`                 | `button.tsx`   | name `button.tsx`, **level 3**, **1 of 1**, **no branch state**   |
+| 1.5  | `ArrowDown`                 | `index.ts`     | name `index.ts`, **level 2**, **2 of 2**, **no branch state**     |
+| 1.6  | `ArrowDown`                 | `package.json` | name `package.json`, **level 1**, **2 of 2**, **no branch state** |
+| 1.7  | `ArrowUp` x4                | back to `src`  | returns through the same items in reverse                         |
+| 1.8  | `ArrowLeft`                 | `src`          | announces **collapsed**; focus stays on `src`                     |
+| 1.9  | `ArrowDown`                 | `package.json` | the collapsed descendants are skipped entirely                    |
+| 1.10 | `ArrowUp` then `ArrowRight` | `src`          | announces **expanded** again; focus stays on `src`                |
+
+### Step 2 - Tree 2, "Nested project files" (control)
+
+Same nodes, same keys, but hierarchy comes from nested `role="group"` elements
+and **no** level/position values are declared. Run the identical sequence.
+
+| #   | Key            | Item         | Expect to hear                         |
+| --- | -------------- | ------------ | -------------------------------------- |
+| 2.1 | (enter tree)   | -            | tree name "Nested project files"       |
+| 2.2 | -              | `src`        | name, level 1, 1 of 2, expanded        |
+| 2.3 | `ArrowDown`    | `components` | name, level 2, 1 of 2, expanded        |
+| 2.4 | `ArrowDown`    | `button.tsx` | name, level 3, 1 of 1, no branch state |
+| 2.5 | `ArrowLeft` x2 | up to `src`  | moves to parent, then collapses        |
+
+**The verdict that matters:** compare 1.2-1.4 against 2.2-2.4. If the flat tree
+conveys level and position as completely as the nested control, the flat model
+passes. If the nested control announces something the flat tree omits, record
+the exact difference and stop.
+
+### Step 3 - Tree 3, "Production nested"
+
+The real component, authored with `TreeFolder`/`TreeLevel`. `P src` starts
+expanded, `P tests` starts collapsed.
+
+| #   | Key          | Item                | Expect to hear                          |
+| --- | ------------ | ------------------- | --------------------------------------- |
+| 3.1 | -            | `P src`             | level 1, 1 of 2, expanded               |
+| 3.2 | `ArrowDown`  | `P button.tsx`      | level 2, 1 of 2, no branch state        |
+| 3.3 | `ArrowDown`  | `P tests`           | level 2, 2 of 2, **collapsed**          |
+| 3.4 | `ArrowRight` | `P tests`           | announces **expanded**, focus unchanged |
+| 3.5 | `ArrowRight` | `P button.test.tsx` | level 3, 1 of 1, no branch state        |
+| 3.6 | `ArrowDown`  | `P package.json`    | level 1, 2 of 2                         |
+
+This must match Step 1. The nested authoring sugar adds no DOM, so any
+difference from the flat tree is a defect.
+
+### Step 4 - Selection states
+
+| #   | Tree                         | Action               | Expect to hear                                                   |
+| --- | ---------------------------- | -------------------- | ---------------------------------------------------------------- |
+| 4.1 | Production single            | enter the tree       | focus starts on `S a`, announced as **selected**                 |
+| 4.2 | Production single            | `ArrowDown` to `S b` | `S b` becomes **selected** (selection follows focus here)        |
+| 4.3 | Production multiple selected | enter the tree       | the tree is announced as allowing **multiple selection**         |
+| 4.4 | Production multiple selected | reach `M disabled`   | announced as **dimmed/disabled**, and with **no** selected state |
+| 4.5 | Production multiple selected | reach `M readonly`   | **no** selected state announced at all                           |
+| 4.6 | Production multiple selected | `Space` on `M a`     | announces **selected**; `Space` again announces **not selected** |
+| 4.7 | Production multiple checked  | reach `K a`          | announced as **checked**, never as "selected"                    |
+| 4.8 | Production multiple checked  | reach `K b`          | announced as **not checked**                                     |
+
+### Step 5 - Horizontal, virtual focus, virtualized
+
+| #   | Tree                     | Action                   | Expect to hear                                                                                 |
+| --- | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------- |
+| 5.1 | Production horizontal    | enter the tree           | announced as a **horizontal** tree                                                             |
+| 5.2 | Production horizontal    | `ArrowDown` on `H src`   | moves **into** the branch, not to the next sibling                                             |
+| 5.3 | Production virtual focus | enter, then `ArrowDown`  | the active item is announced although DOM focus stays on the tree                              |
+| 5.4 | Production virtualized   | reach `W file 0`         | level 2, **1 of 20** - the complete total, even though only a handful of rows exist in the DOM |
+| 5.5 | Production virtualized   | arrow down several times | announcements stay correct as rows mount and unmount                                           |
+
+Step 5.4 is the virtualization contract: the set size must reflect all twenty
+siblings, not the mounted window.
+
+### Recording the result
+
+For each row, write `Pass`, `Fail: <what was actually spoken>`, or
+`Not supported: <platform reason>` into the desktop matrix above. Paste or
+screenshot the caption panel text for anything that fails - the exact spoken
+string is the useful evidence.
+
 ## Results log
 
 Record the date, tester, screen reader version, browser version, and OS for
