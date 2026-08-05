@@ -1,4 +1,4 @@
-import { createStore } from "@ariakit/store";
+import { createStore, setup, sync } from "@ariakit/store";
 import type { Store, StoreOptions, StoreProps } from "@ariakit/store";
 import { applyState, defaultValue } from "@ariakit/utils";
 import type { SetState } from "@ariakit/utils";
@@ -12,7 +12,7 @@ import {
   findFirstEnabledItem,
 } from "../composite/composite-store.ts";
 import type { TreeStoreItem } from "./utils.ts";
-import { getVisibleTreeItems } from "./utils.ts";
+import { getTreeRange, getVisibleTreeItems } from "./utils.ts";
 
 export type { TreeStoreItem } from "./utils.ts";
 
@@ -44,6 +44,10 @@ export function getTreeSourceItems(state: TreeStoreState) {
   return state.items.length > state.renderedItems.length
     ? state.items
     : state.renderedItems;
+}
+
+function isSelectableTreeItem(item: TreeStoreItem | null | undefined) {
+  return !!item && !item.disabled && item.selectable !== false;
 }
 
 function isVisibleEnabledId(
@@ -94,6 +98,12 @@ export function createTreeStore(props: TreeStoreProps = {}): TreeStore {
     focusShift: defaultValue(props.focusShift, syncState?.focusShift, false),
   });
 
+  const selectionMode = defaultValue(
+    props.selectionMode,
+    syncState?.selectionMode,
+    "none" as const,
+  );
+
   const initialState: TreeStoreState = {
     ...composite.getState(),
     expandedIds: defaultValue(
@@ -102,9 +112,35 @@ export function createTreeStore(props: TreeStoreProps = {}): TreeStore {
       props.defaultExpandedIds,
       [] as string[],
     ),
+    selectedIds: defaultValue(
+      props.selectedIds,
+      syncState?.selectedIds,
+      props.defaultSelectedIds,
+      [] as string[],
+    ),
+    selectionMode,
+    selectionAttribute: defaultValue(
+      props.selectionAttribute,
+      syncState?.selectionAttribute,
+      "selected" as const,
+    ),
+    // Multiple selection must always keep focus and selection independent, so
+    // selection never follows focus there even when a consumer asks for it.
+    selectOnMove:
+      selectionMode === "multiple"
+        ? false
+        : defaultValue(
+            props.selectOnMove,
+            syncState?.selectOnMove,
+            selectionMode === "single",
+          ),
+    selectionAnchorId: null,
   };
 
   const tree = createStore(initialState, composite, props.store);
+
+  const hasExplicitItems =
+    props.items !== undefined || props.defaultItems !== undefined;
 
   const getSourceItems = () => getTreeSourceItems(tree.getState());
 
@@ -179,6 +215,144 @@ export function createTreeStore(props: TreeStoreProps = {}): TreeStore {
     return expand(id);
   };
 
+  const isSelectableId = (id: string) =>
+    isSelectableTreeItem(getSourceItem(id));
+
+  const isSelectionEnabled = () => tree.getState().selectionMode !== "none";
+
+  /**
+   * Duplicates are removed, known disabled and unselectable ids are dropped,
+   * known ids follow the complete collection order, and ids that are not known
+   * yet are preserved so controlled remote data survives until it registers.
+   * Single mode exposes only the first known id in collection order.
+   */
+  function normalizeSelectedIds(input: readonly string[]) {
+    const state = tree.getState();
+    const unique = [...new Set(input)];
+    const source = getTreeSourceItems(state);
+    const knownIds = new Set(source.map((item) => item.id));
+    const known = source
+      .filter((item) => unique.includes(item.id))
+      .filter(isSelectableTreeItem)
+      .map((item) => item.id);
+    const unknown = unique.filter((id) => !knownIds.has(id));
+    if (state.selectionMode === "single") {
+      return [...known.slice(0, 1), ...unknown];
+    }
+    return [...known, ...unknown];
+  }
+
+  const setSelectedIds: TreeStoreFunctions["setSelectedIds"] = (value) => {
+    tree.setState("selectedIds", (previous) =>
+      normalizeSelectedIds(applyState(value, previous)),
+    );
+  };
+
+  const select: TreeStoreFunctions["select"] = (id) => {
+    if (!isSelectionEnabled() || !isSelectableId(id)) return;
+    const single = tree.getState().selectionMode === "single";
+    setSelectedIds((ids) => {
+      if (single) return [id];
+      return ids.includes(id) ? ids : [...ids, id];
+    });
+    tree.setState("selectionAnchorId", id);
+  };
+
+  const deselect: TreeStoreFunctions["deselect"] = (id) => {
+    if (!isSelectionEnabled()) return;
+    setSelectedIds((ids) => ids.filter((selectedId) => selectedId !== id));
+  };
+
+  const toggleSelected: TreeStoreFunctions["toggleSelected"] = (id) => {
+    if (!isSelectionEnabled() || !isSelectableId(id)) return;
+    setSelectedIds((ids) =>
+      ids.includes(id)
+        ? ids.filter((selectedId) => selectedId !== id)
+        : [...ids, id],
+    );
+    // The anchor tracks the last directly acted item, so it stays on this id
+    // even when the toggle removed it from the selection.
+    tree.setState("selectionAnchorId", id);
+  };
+
+  const selectRange: TreeStoreFunctions["selectRange"] = (fromId, toId) => {
+    if (!isSelectionEnabled()) return;
+    const state = tree.getState();
+    const source = getTreeSourceItems(state);
+    const rangeIds = getTreeRange(source, state.expandedIds, fromId, toId)
+      .filter(isSelectableTreeItem)
+      .map((item) => item.id);
+    const hasVisibleAnchor = getVisibleTreeItems(
+      source,
+      state.expandedIds,
+    ).some((item) => item.id === fromId);
+    setSelectedIds((ids) => [...ids, ...rangeIds]);
+    // A valid anchor survives a range selection; an invalid one is replaced by
+    // the item the range collapsed onto.
+    if (!hasVisibleAnchor) {
+      tree.setState("selectionAnchorId", toId);
+    }
+  };
+
+  const selectAll: TreeStoreFunctions["selectAll"] = () => {
+    if (!isSelectionEnabled()) return;
+    const state = tree.getState();
+    // The complete collection, so collapsed descendants are included.
+    const selectableIds = getTreeSourceItems(state)
+      .filter(isSelectableTreeItem)
+      .map((item) => item.id);
+    const allSelected =
+      selectableIds.length > 0 &&
+      selectableIds.every((id) => state.selectedIds.includes(id));
+    setSelectedIds(allSelected ? [] : selectableIds);
+  };
+
+  const clearSelection: TreeStoreFunctions["clearSelection"] = () => {
+    if (!isSelectionEnabled()) return;
+    setSelectedIds([]);
+  };
+
+  // Selection follows focus only through Composite moves, never through a bare
+  // activeId change, so programmatic setActiveId never selects unexpectedly.
+  setup(tree, () =>
+    sync(tree, ["moves"], () => {
+      const state = tree.getState();
+      if (state.selectionMode !== "single") return;
+      if (!state.selectOnMove) return;
+      if (!state.activeId) return;
+      select(state.activeId);
+    }),
+  );
+
+  // Re-run normalization when the mode changes so switching to single retains
+  // the first selected item in collection order.
+  setup(tree, () =>
+    sync(tree, ["selectionMode"], () => {
+      tree.setState("selectedIds", (ids) => normalizeSelectedIds(ids));
+    }),
+  );
+
+  // Only an explicit complete collection can prove that an item was deleted
+  // rather than merely unregistered by StrictMode, conditional rendering, or
+  // virtualization.
+  if (hasExplicitItems) {
+    setup(tree, () => {
+      let previousKnownIds: Set<string> | null = null;
+      return sync(tree, ["items"], (state) => {
+        const currentKnownIds = new Set(state.items.map((item) => item.id));
+        const removedIds = previousKnownIds
+          ? [...previousKnownIds].filter((id) => !currentKnownIds.has(id))
+          : [];
+        previousKnownIds = currentKnownIds;
+        if (!removedIds.length) return;
+        const removed = new Set(removedIds);
+        tree.setState("selectedIds", (ids) =>
+          ids.filter((id) => !removed.has(id)),
+        );
+      });
+    });
+  }
+
   const createTreeMovement =
     (move: CompositeStoreFunctions<TreeStoreItem>["next"]) =>
     (options?: TreeMoveOptions | number) => {
@@ -198,6 +372,14 @@ export function createTreeStore(props: TreeStoreProps = {}): TreeStore {
     collapse,
     toggle,
 
+    setSelectedIds,
+    select,
+    deselect,
+    toggleSelected,
+    selectRange,
+    selectAll,
+    clearSelection,
+
     next: createTreeMovement(composite.next),
     previous: createTreeMovement(composite.previous),
     up: createTreeMovement(composite.up),
@@ -208,7 +390,39 @@ export function createTreeStore(props: TreeStoreProps = {}): TreeStore {
   };
 }
 
-export interface TreeStoreState extends CompositeStoreState<TreeStoreItem> {
+export type TreeSelectionMode = "none" | "single" | "multiple";
+
+export type TreeSelectionAttribute = "selected" | "checked";
+
+interface TreeSelectionState {
+  /**
+   * The ids of the selected items, in complete collection order.
+   */
+  selectedIds: string[];
+  /**
+   * How many items can be selected. `none` makes selection state inert and
+   * omits selection ARIA from items.
+   * @default "none"
+   */
+  selectionMode: TreeSelectionMode;
+  /**
+   * Which ARIA attribute carries selection state. A Tree never emits both.
+   * @default "selected"
+   */
+  selectionAttribute: TreeSelectionAttribute;
+  /**
+   * Whether moving focus also selects. Forced off for multiple selection.
+   * @default true only when `selectionMode` is `single`
+   */
+  selectOnMove: boolean;
+  /**
+   * The last directly acted item, used as the origin of range selections.
+   */
+  selectionAnchorId: string | null;
+}
+
+export interface TreeStoreState
+  extends CompositeStoreState<TreeStoreItem>, TreeSelectionState {
   /**
    * The ids of the expanded branches, in complete collection order.
    */
@@ -233,16 +447,56 @@ export interface TreeStoreFunctions extends CompositeStoreFunctions<TreeStoreIte
    * Collapses an expanded branch, otherwise expands it.
    */
   toggle: (id: string) => void;
+  /**
+   * Sets the `selectedIds` state.
+   */
+  setSelectedIds: SetState<TreeStoreState["selectedIds"]>;
+  /**
+   * Selects an item. In single mode this replaces the current selection.
+   */
+  select: (id: string) => void;
+  /**
+   * Removes an item from the selection.
+   */
+  deselect: (id: string) => void;
+  /**
+   * Toggles an item and makes it the selection anchor.
+   */
+  toggleSelected: (id: string) => void;
+  /**
+   * Adds the inclusive visible range between two items to the selection.
+   */
+  selectRange: (fromId: string, toId: string) => void;
+  /**
+   * Selects every selectable item, including collapsed descendants. Clears the
+   * selection instead when every selectable item is already selected.
+   */
+  selectAll: () => void;
+  /**
+   * Clears the selection without changing focus, expansion, or the anchor.
+   */
+  clearSelection: () => void;
 }
 
 export interface TreeStoreOptions
   extends
-    StoreOptions<TreeStoreState, "expandedIds">,
+    StoreOptions<
+      TreeStoreState,
+      | "expandedIds"
+      | "selectedIds"
+      | "selectionMode"
+      | "selectionAttribute"
+      | "selectOnMove"
+    >,
     CompositeStoreOptions<TreeStoreItem> {
   /**
    * The ids of the branches that are expanded by default.
    */
   defaultExpandedIds?: TreeStoreState["expandedIds"];
+  /**
+   * The ids of the items that are selected by default.
+   */
+  defaultSelectedIds?: TreeStoreState["selectedIds"];
 }
 
 export interface TreeStoreProps
