@@ -129,6 +129,73 @@ export function getTreeDescendants(
   );
 }
 
+export interface TreeValidationWarning {
+  id: string;
+  reason: string;
+}
+
+/**
+ * Reports malformed hierarchy in a complete item collection. Pure and
+ * allocation-light so it can run whenever the collection changes in
+ * development. A missing ancestor is deliberately not a warning: a controlled
+ * store may hold a partial remote dataset. Neither is a folder without loaded
+ * children, which is a valid lazy branch.
+ */
+export function validateTreeItems(
+  items: readonly TreeStoreItem[],
+): TreeValidationWarning[] {
+  const warnings: TreeValidationWarning[] = [];
+  const seenIds = new Set<string>();
+  const itemsById = new Map<string, TreeStoreItem>();
+
+  for (const item of items) {
+    if (seenIds.has(item.id)) {
+      warnings.push({ id: item.id, reason: "Duplicate id" });
+    }
+    seenIds.add(item.id);
+    if (!itemsById.has(item.id)) {
+      itemsById.set(item.id, item);
+    }
+  }
+
+  for (const item of items) {
+    if (item.folderPath.includes(item.id)) {
+      warnings.push({
+        id: item.id,
+        reason: "Item contains its own id in folderPath",
+      });
+      continue;
+    }
+    const ancestorsSeen = new Set<string>();
+    let repeatsAncestor = false;
+    for (const ancestorId of item.folderPath) {
+      if (ancestorsSeen.has(ancestorId)) {
+        repeatsAncestor = true;
+        break;
+      }
+      ancestorsSeen.add(ancestorId);
+    }
+    if (repeatsAncestor) {
+      warnings.push({
+        id: item.id,
+        reason: "folderPath repeats an ancestor id",
+      });
+      continue;
+    }
+    for (const ancestorId of item.folderPath) {
+      const ancestor = itemsById.get(ancestorId);
+      if (!ancestor) continue;
+      if (ancestor.folder) continue;
+      warnings.push({
+        id: item.id,
+        reason: `Ancestor "${ancestorId}" is not marked as a folder`,
+      });
+    }
+  }
+
+  return warnings;
+}
+
 export function getTreeRange(
   items: readonly TreeStoreItem[],
   expandedIds: readonly string[],

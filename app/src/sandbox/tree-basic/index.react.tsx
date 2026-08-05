@@ -199,6 +199,66 @@ function HorizontalRtlFiles() {
 }
 
 /**
+ * Consumer props that contradict the store must not win. Selection state,
+ * branch state, and hiding are owned by the tree; explicit hierarchy values are
+ * not.
+ */
+function Overrides() {
+  return (
+    <TreeProvider defaultExpandedIds={["ov-src"]} selectionMode="single">
+      <Tree aria-label="Overrides">
+        {/* Says collapsed while the store says expanded. */}
+        <TreeItem id="ov-src" folder aria-expanded={false}>
+          Ov src
+        </TreeItem>
+        {/* A leaf may not acquire a branch state. */}
+        <TreeItem id="ov-leaf" folderPath={["ov-src"]} aria-expanded={true}>
+          Ov leaf
+        </TreeItem>
+        {/* Checked has no meaning while the tree uses aria-selected. */}
+        <TreeItem id="ov-mixed" folderPath={["ov-src"]} aria-checked="mixed">
+          Ov mixed
+        </TreeItem>
+        {/* Explicit hierarchy values are author owned and must survive. */}
+        <TreeItem id="ov-remote" aria-posinset={9} aria-setsize={-1}>
+          Ov remote
+        </TreeItem>
+        {/* A collapsed ancestor wins over hidden={false}. */}
+        <TreeItem id="ov-closed" folder>
+          Ov closed
+        </TreeItem>
+        <TreeItem id="ov-buried" folderPath={["ov-closed"]} hidden={false}>
+          Ov buried
+        </TreeItem>
+      </Tree>
+    </TreeProvider>
+  );
+}
+
+/** Tri-state is preserved only where aria-checked is the selection attribute. */
+function CheckedOverrides() {
+  return (
+    <TreeProvider
+      defaultExpandedIds={["cm-src"]}
+      selectionMode="multiple"
+      selectionAttribute="checked"
+    >
+      <Tree aria-label="Checked overrides">
+        <TreeItem id="cm-src" folder>
+          Cm src
+        </TreeItem>
+        <TreeItem id="cm-mixed" folderPath={["cm-src"]} aria-checked="mixed">
+          Cm mixed
+        </TreeItem>
+        <TreeItem id="cm-plain" folderPath={["cm-src"]} aria-selected>
+          Cm plain
+        </TreeItem>
+      </Tree>
+    </TreeProvider>
+  );
+}
+
+/**
  * A non-selectable tree used to check that activation reaches consumer
  * handlers and that a consumer can cancel the built-in hierarchy keys.
  */
@@ -267,6 +327,8 @@ export default function Example() {
       <HorizontalFiles />
       <RtlFiles />
       <HorizontalRtlFiles />
+      <Overrides />
+      <CheckedOverrides />
       <Activation />
       <InvalidLevel />
     </div>

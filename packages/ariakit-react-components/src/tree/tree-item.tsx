@@ -321,23 +321,31 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
       }
     });
 
+    // Tri-state is a consumer concern in checked mode: the first release does
+    // not calculate parent aggregation, so an explicit "mixed" is preserved.
+    const checkedValue = props["aria-checked"] === "mixed" ? "mixed" : selected;
+
     props = {
       role: "treeitem",
+      // Explicit consumer hierarchy values win, including aria-setsize={-1}
+      // for an unknown remote total.
       "aria-level": metadata?.level ?? folderPath.length + 1,
       "aria-posinset": metadata?.posInSet,
       "aria-setsize": metadata?.setSize,
-      // Leaves must never expose an expanded state, not even a false one.
-      "aria-expanded": folder ? expanded : undefined,
-      "aria-selected": useSelectedAttribute ? selected : undefined,
-      "aria-checked": useCheckedAttribute ? selected : undefined,
       "data-selected": (effectiveSelectable && selected) || undefined,
       ...props,
       id,
       onKeyDown,
       onClick,
-      // Assigned after the consumer props so `hidden={false}` cannot expose a
-      // descendant of a collapsed ancestor.
+      // Everything below is assigned after the consumer props on purpose. A
+      // consumer cannot contradict the store here: `hidden={false}` cannot
+      // expose a descendant of a collapsed ancestor, a leaf cannot acquire an
+      // expanded state, and the selection attribute the tree does not use is
+      // always stripped so one tree never mixes selected and checked.
       hidden: hiddenByAncestor || props.hidden || undefined,
+      "aria-expanded": folder ? expanded : undefined,
+      "aria-selected": useSelectedAttribute ? selected : undefined,
+      "aria-checked": useCheckedAttribute ? checkedValue : undefined,
     };
 
     props = useCompositeItem<TagName>({ store, getItem, ...props });

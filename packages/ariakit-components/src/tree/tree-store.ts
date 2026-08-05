@@ -1,6 +1,6 @@
 import { createStore, setup, sync } from "@ariakit/store";
 import type { Store, StoreOptions, StoreProps } from "@ariakit/store";
-import { applyState, defaultValue } from "@ariakit/utils";
+import { applyState, defaultValue, warnOnce } from "@ariakit/utils";
 import type { SetState } from "@ariakit/utils";
 import type {
   CompositeStoreFunctions,
@@ -12,7 +12,11 @@ import {
   findFirstEnabledItem,
 } from "../composite/composite-store.ts";
 import type { TreeStoreItem } from "./utils.ts";
-import { getTreeRange, getVisibleTreeItems } from "./utils.ts";
+import {
+  getTreeRange,
+  getVisibleTreeItems,
+  validateTreeItems,
+} from "./utils.ts";
 
 export type { TreeStoreItem } from "./utils.ts";
 
@@ -429,6 +433,18 @@ export function createTreeStore(props: TreeStoreProps = {}): TreeStore {
         );
       });
     });
+  }
+
+  // Development-only hierarchy validation. Runs when the complete collection
+  // changes, and each distinct message is reported once.
+  if (process.env.NODE_ENV !== "production") {
+    setup(tree, () =>
+      sync(tree, ["items"], (state) => {
+        for (const warning of validateTreeItems(state.items)) {
+          warnOnce(`Ariakit Tree: ${warning.reason} (item "${warning.id}").`);
+        }
+      }),
+    );
   }
 
   const createTreeMovement =

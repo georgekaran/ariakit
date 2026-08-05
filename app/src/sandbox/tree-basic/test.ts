@@ -482,3 +482,52 @@ test("keeps hierarchy keys physical in a vertical RTL tree", async () => {
   await press.ArrowDown();
   expect(rtl().treeitem.ensure("R button")).toHaveFocus();
 });
+
+function overrides() {
+  return q.within(q.tree.ensure("Overrides"));
+}
+
+function checkedOverrides() {
+  return q.within(q.tree.ensure("Checked overrides"));
+}
+
+test("keeps branch state owned by the store", () => {
+  // The consumer said collapsed; the store says expanded.
+  expect(overrides().treeitem.ensure("Ov src")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+});
+
+test("never lets a leaf acquire a branch state", () => {
+  expect(overrides().treeitem.ensure("Ov leaf")).not.toHaveAttribute(
+    "aria-expanded",
+  );
+});
+
+test("strips the selection attribute the tree does not use", () => {
+  const mixed = overrides().treeitem.ensure("Ov mixed");
+  expect(mixed).not.toHaveAttribute("aria-checked");
+  expect(mixed).toHaveAttribute("aria-selected", "false");
+});
+
+test("preserves explicit hierarchy values including an unknown total", () => {
+  const remote = overrides().treeitem.ensure("Ov remote");
+  expect(remote).toHaveAttribute("aria-posinset", "9");
+  expect(remote).toHaveAttribute("aria-setsize", "-1");
+});
+
+test("does not let hidden false expose a collapsed descendant", () => {
+  expect(overrides().treeitem.ensure.hidden("Ov buried")).not.toBeVisible();
+});
+
+test("preserves an explicit mixed state only in checked mode", () => {
+  expect(checkedOverrides().treeitem.ensure("Cm mixed")).toHaveAttribute(
+    "aria-checked",
+    "mixed",
+  );
+  // An accidental aria-selected is stripped in checked mode.
+  const plain = checkedOverrides().treeitem.ensure("Cm plain");
+  expect(plain).not.toHaveAttribute("aria-selected");
+  expect(plain).toHaveAttribute("aria-checked", "false");
+});

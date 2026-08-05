@@ -9,6 +9,7 @@ import {
   getTreeSiblings,
   getVisibleTreeItems,
   isTreeItemVisible,
+  validateTreeItems,
 } from "./utils.ts";
 
 const items: TreeStoreItem[] = [
@@ -202,4 +203,64 @@ test("returns only the endpoint when the anchor is hidden or unknown", () => {
     "button",
   ]);
   expect(getTreeRange(items, ["src"], "button", "nope")).toEqual([]);
+});
+
+test("reports duplicate ids", () => {
+  expect(
+    validateTreeItems([
+      { id: "a", folderPath: [] },
+      { id: "a", folderPath: [] },
+    ]),
+  ).toContainEqual({ id: "a", reason: "Duplicate id" });
+});
+
+test("reports an item that contains its own id in its path", () => {
+  expect(
+    validateTreeItems([{ id: "a", folder: true, folderPath: ["a"] }]),
+  ).toContainEqual({
+    id: "a",
+    reason: "Item contains its own id in folderPath",
+  });
+});
+
+test("reports a path that repeats an ancestor", () => {
+  expect(
+    validateTreeItems([
+      { id: "a", folder: true, folderPath: [] },
+      { id: "b", folder: true, folderPath: ["a"] },
+      { id: "c", folderPath: ["a", "b", "a"] },
+    ]),
+  ).toContainEqual({
+    id: "c",
+    reason: "folderPath repeats an ancestor id",
+  });
+});
+
+test("reports a known ancestor that is not a folder", () => {
+  expect(
+    validateTreeItems([
+      { id: "leaf", folderPath: [] },
+      { id: "child", folderPath: ["leaf"] },
+    ]),
+  ).toContainEqual({
+    id: "child",
+    reason: 'Ancestor "leaf" is not marked as a folder',
+  });
+});
+
+test("accepts a lazy folder with no loaded descendants", () => {
+  expect(
+    validateTreeItems([{ id: "lazy", folder: true, folderPath: [] }]),
+  ).toEqual([]);
+});
+
+test("accepts a deliberately partial dataset with a missing ancestor", () => {
+  // Remote data may arrive without its ancestors; that is not an error.
+  expect(validateTreeItems([{ id: "child", folderPath: ["absent"] }])).toEqual(
+    [],
+  );
+});
+
+test("accepts a well formed collection", () => {
+  expect(validateTreeItems(items)).toEqual([]);
 });
