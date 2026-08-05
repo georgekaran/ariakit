@@ -91,14 +91,82 @@ the accessibility tree must expose the same state during swipe navigation.
 | VoiceOver / iOS Safari    | Pending human — required by Task 13 | Pending human — required by Task 13 | Pending human — required by Task 13 | Pending human — required by Task 13 | Pending human — required by Task 13 |
 | TalkBack / Android Chrome | Pending human — required by Task 13 | Pending human — required by Task 13 | Pending human — required by Task 13 | Pending human — required by Task 13 | Pending human — required by Task 13 |
 
-## Task 13 additions
+## Task 13: production Tree release gate
 
-Task 13 replaces this fixture's scope with the production Tree. It adds cases
-for declarative nested authoring, single selection, multiple `aria-selected`,
-multiple `aria-checked`, virtual focus, horizontal orientation, and a small
-virtualized `TreeRenderer`, and it extends these tables with the selection,
-`Home`/`End`, typeahead, `*`, and forced-colors rows listed in the plan. Every
-`Pending human` cell above must be resolved before Task 14.
+The fixture now renders the production Tree beside the two static controls.
+These cases are the release gate. **Every cell below must be resolved before
+Task 14 and before any public export.**
+
+Cases in the page, each with its own accessible name:
+
+| Case              | Tree name                      | What it exercises                                           |
+| ----------------- | ------------------------------ | ----------------------------------------------------------- |
+| Nested authoring  | `Production nested`            | `TreeFolder`/`TreeLevel` sugar, branch and leaf distinction |
+| Single selection  | `Production single`            | `aria-selected`, entry focus on the selected node           |
+| Multiple selected | `Production multiple selected` | `aria-multiselectable`, disabled and unselectable nodes     |
+| Multiple checked  | `Production multiple checked`  | `aria-checked` instead of `aria-selected`                   |
+| Virtual focus     | `Production virtual focus`     | `aria-activedescendant` presentation                        |
+| Horizontal        | `Production horizontal`        | `aria-orientation`, Down/Up hierarchy mapping               |
+| Virtualized       | `Production virtualized`       | complete set size while only a window is mounted            |
+
+### Desktop matrix
+
+Record for each combination: tree name and orientation on entry; the first
+focus target; item name, level, position and set size, disabled state, and
+selected or checked state; closed/open announcements before and after arrow
+actions; parent/child movement; Home, End, typeahead, and `*`; the
+focus-versus-selection distinction; Space, Shift range, and select-all
+announcements; and virtual focus and virtualized off-window presentation.
+
+| Screen reader / browser  | Nested        | Single        | Multiple selected | Multiple checked | Virtual focus | Horizontal    | Virtualized   |
+| ------------------------ | ------------- | ------------- | ----------------- | ---------------- | ------------- | ------------- | ------------- |
+| NVDA / Firefox           | Pending human | Pending human | Pending human     | Pending human    | Pending human | Pending human | Pending human |
+| NVDA / Chrome            | Pending human | Pending human | Pending human     | Pending human    | Pending human | Pending human | Pending human |
+| JAWS / Chrome            | Pending human | Pending human | Pending human     | Pending human    | Pending human | Pending human | Pending human |
+| VoiceOver / macOS Safari | Pending human | Pending human | Pending human     | Pending human    | Pending human | Pending human | Pending human |
+
+### Mobile matrix
+
+Record swipe navigation order, level and position, expanded state, selected or
+checked state, double-tap activation, and whether collapsed descendants are
+skipped.
+
+| Screen reader / browser   | Nested        | Single        | Multiple selected | Multiple checked | Virtualized   |
+| ------------------------- | ------------- | ------------- | ----------------- | ---------------- | ------------- |
+| VoiceOver / iOS Safari    | Pending human | Pending human | Pending human     | Pending human    | Pending human |
+| TalkBack / Android Chrome | Pending human | Pending human | Pending human     | Pending human    | Pending human |
+
+### Visual accessibility modes
+
+In forced-colors/high-contrast mode and at 200% zoom, verify that focus,
+selection, current page, disabled, and expanded indicators stay distinguishable
+without relying on color alone.
+
+| Check                                         | Result        |
+| --------------------------------------------- | ------------- |
+| Forced colors: focus indicator visible        | Pending human |
+| Forced colors: selected state distinguishable | Pending human |
+| Forced colors: disabled state distinguishable | Pending human |
+| Forced colors: expanded state distinguishable | Pending human |
+| 200% zoom: no clipped focus ring or overlap   | Pending human |
+
+### Triage rule for any failure
+
+1. Both the flat fixture and the nested control fail identically: document the
+   platform limitation and confirm Ariakit does not worsen it.
+2. Only the production Tree fails: fix the implementation and rerun the
+   affected automated and manual rows.
+3. All flat cases fail while the nested control passes because ownership is
+   missing: **stop before Task 15.** Raise a separate reviewed design for the
+   smallest ownership adapter. Do not add `aria-owns` opportunistically.
+
+### Automated evidence already in place
+
+These do **not** substitute for the rows above; they only pin the DOM contract
+the screen readers are asked about.
+
+- `pnpm test packages/ariakit-components/src/tree tree-basic tree-selection tree-focus tree-renderer tree-ssr tree-flat-at` — 163 passing
+- `pnpm -F app run test-chrome tree-basic tree-selection tree-focus tree-renderer tree-ssr tree-flat-at` — 29 passing
 
 ## Results log
 
