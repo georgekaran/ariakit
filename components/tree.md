@@ -158,6 +158,26 @@ Consumer props win for `aria-level`, `aria-posinset`, and `aria-setsize`, includ
 
 Everything else is owned by the store and cannot be contradicted: `hidden` (so `hidden={false}` cannot expose a collapsed descendant), `aria-expanded` (leaves never acquire one), and the selection attributes (the unused one is always stripped). An explicit `aria-checked="mixed"` is preserved in checked mode, since the first release does not calculate tri-state aggregation.
 
+## Styling and the hidden attribute
+
+A collapsed descendant is hidden with the `hidden` attribute. Browsers implement
+that through `[hidden] { display: none }` in the user-agent stylesheet, which
+**any** explicit `display` on your item overrides. A rule as ordinary as
+`display: flex` on the row, or Tailwind's `flex` utility, will leave the
+descendants of a collapsed branch on screen.
+
+Restore it whenever you set `display`:
+
+```css
+.tree-item[hidden] {
+  display: none;
+}
+```
+
+Style focus with `data-active-item`, selection with `data-selected`, depth with
+`aria-level`, and branch state with `aria-expanded`, so the visuals follow the
+same state the accessibility tree reports.
+
 ## Server rendering
 
 Visibility, level, branch state, and selection all derive from props and initial store state during render, so the server output is correct before any effect runs and a collapsed descendant is never briefly exposed.

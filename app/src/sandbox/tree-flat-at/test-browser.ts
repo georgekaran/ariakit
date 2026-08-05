@@ -19,6 +19,23 @@ withFramework(import.meta.dirname, async ({ query, test }) => {
     await test.expect(nested.treeitem("button.tsx")).toBeVisible();
   });
 
+  test("keeps collapsed descendants off screen in a styled tree", async ({
+    page,
+    q,
+  }) => {
+    // Checks computed visibility, not just the attribute. Role locators
+    // exclude [hidden] elements from the accessibility tree, so they cannot
+    // tell "correctly hidden" from "still painted"; an id selector can.
+    const buried = page.locator("#p-test");
+    await test.expect(buried).toHaveCount(1);
+    await test.expect(buried).toBeHidden();
+
+    const tree = query(q.tree("Production nested"));
+    await tree.treeitem("P tests").click();
+    await q.tree("Production nested").press("ArrowRight");
+    await test.expect(buried).toBeVisible();
+  });
+
   test("moves focus and expansion identically in both trees", async ({
     page,
     q,

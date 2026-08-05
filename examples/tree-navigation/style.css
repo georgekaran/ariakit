@@ -82,3 +82,12 @@
     outline-offset: -3px;
   }
 }
+
+/*
+ * Any explicit `display` overrides the browser's `[hidden] { display: none }`,
+ * which would leave descendants of a collapsed branch on screen. Tree sets the
+ * `hidden` attribute, so restore it here.
+ */
+.tree-item[hidden] {
+  display: none;
+}

@@ -77,6 +77,14 @@
   overscroll-behavior: contain;
 }
 
+/*
+ * An explicit display overrides the browser's `[hidden] { display: none }`, so
+ * it has to be restored for collapsed descendants to stay hidden.
+ */
+[role="treeitem"][hidden] {
+  display: none;
+}
+
 [role="treeitem"] {
   display: flex;
   align-items: center;
