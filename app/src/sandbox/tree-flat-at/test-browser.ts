@@ -60,4 +60,28 @@ withFramework(import.meta.dirname, async ({ query, test }) => {
       await test.expect(tree.treeitem("src")).toBeFocused();
     }
   });
+
+  test("toggles from the production arrow without adding a focus stop", async ({
+    q,
+  }) => {
+    const tree = query(q.tree("Production nested"));
+    const item = tree.treeitem("P tests");
+    const arrow = item.locator("span[aria-hidden='true']");
+
+    await test.expect(item).toHaveAttribute("aria-expanded", "false");
+    test.expect(await arrow.getAttribute("tabindex")).toBeNull();
+    await arrow.click();
+    await test.expect(item).toHaveAttribute("aria-expanded", "true");
+    await test.expect(tree.treeitem("P button.test.tsx")).toBeVisible();
+  });
+
+  test("speaks each production row label exactly once", async ({ q }) => {
+    const tree = query(q.tree("Production nested"));
+    // The decorative arrow contributes no text, so the row's own label must
+    // appear exactly once in its text content.
+    for (const name of ["P src", "P button.tsx", "P tests", "P package.json"]) {
+      const text = (await tree.treeitem(name).textContent()) ?? "";
+      test.expect(text.split(name).length - 1).toBe(1);
+    }
+  });
 });

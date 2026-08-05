@@ -3,7 +3,12 @@ import { act, createElement } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
-import { SsrCheckedTree, SsrRendererTree, SsrTree } from "./index.react.tsx";
+import {
+  SsrCheckedTree,
+  SsrNestedGeneratedTree,
+  SsrRendererTree,
+  SsrTree,
+} from "./index.react.tsx";
 
 type Query = ReturnType<typeof q.within>;
 
@@ -185,4 +190,44 @@ test("keeps the mounted example consistent with the server contract", () => {
   expect(
     q.within(q.tree.ensure("SSR renderer")).treeitem.ensure("r-b"),
   ).toHaveAttribute("aria-setsize", "3");
+});
+
+test("keeps generated nested ids and levels stable through hydration", async () => {
+  const serverIds: string[] = [];
+  await renderAndHydrate(
+    SsrNestedGeneratedTree,
+    (query) => {
+      const root = query.treeitem.ensure("SSR generated root");
+      const child = query.treeitem.ensure.hidden("SSR generated child");
+      expect(root.id).toBeTruthy();
+      expect(child.id).toBeTruthy();
+      expect(root).toHaveAttribute("aria-level", "1");
+      expect(child).toHaveAttribute("aria-level", "2");
+      expect(root).toHaveAttribute("aria-expanded", "false");
+      expect(child).not.toBeVisible();
+      serverIds.push(root.id, child.id);
+    },
+    (query) => {
+      expect([
+        query.treeitem.ensure("SSR generated root").id,
+        query.treeitem.ensure.hidden("SSR generated child").id,
+      ]).toEqual(serverIds);
+    },
+  );
+});
+
+test("renders one hidden-from-AT arrow slot per item before hydration", async () => {
+  await renderAndHydrate(SsrTree, (query) => {
+    for (const item of query.treeitem.all.hidden()) {
+      const arrow = item.querySelector<HTMLElement>("span[aria-hidden='true']");
+      expect(arrow).toBeInTheDocument();
+      expect(arrow?.querySelector("svg")).toBeInTheDocument();
+      expect(arrow).not.toHaveAttribute("tabindex");
+      if (item.hasAttribute("aria-expanded")) {
+        expect(arrow?.style.visibility).not.toBe("hidden");
+      } else {
+        expect(arrow?.style.visibility).toBe("hidden");
+      }
+    }
+  });
 });

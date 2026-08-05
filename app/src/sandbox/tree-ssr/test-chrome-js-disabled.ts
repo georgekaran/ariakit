@@ -50,4 +50,13 @@ withFramework(import.meta.dirname, async ({ query, test }) => {
       );
     test.expect(tabbableHidden).toBe(0);
   });
+
+  test("exposes the generated nested tree without scripting", async ({ q }) => {
+    const generated = query(q.tree("SSR generated nested"));
+    await test.expect(generated.treeitem("SSR generated root")).toBeVisible();
+    await test.expect(generated.treeitem("SSR generated child")).toBeHidden();
+    await test
+      .expect(generated.treeitem("SSR generated root"))
+      .toHaveAttribute("aria-level", "1");
+  });
 });

@@ -54,4 +54,22 @@ withFramework(import.meta.dirname, async ({ query, test }) => {
       .toHaveAttribute("aria-setsize", "3");
     await test.expect(tree.treeitem("r-hidden")).toHaveCount(0);
   });
+
+  test("hydrates the generated nested tree with unique ids", async ({
+    page,
+  }) => {
+    // The collapsed child is [hidden], which role locators exclude from the
+    // accessibility tree, so the ids are read from the DOM directly.
+    const ids = await page.evaluate(() => {
+      const tree = document.querySelector(
+        '[aria-label="SSR generated nested"]',
+      );
+      return [...(tree?.querySelectorAll('[role="treeitem"]') ?? [])].map(
+        (item) => item.id,
+      );
+    });
+    test.expect(ids).toHaveLength(2);
+    test.expect(ids.every(Boolean)).toBe(true);
+    test.expect(new Set(ids).size).toBe(2);
+  });
 });

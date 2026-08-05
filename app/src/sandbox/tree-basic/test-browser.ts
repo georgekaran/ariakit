@@ -83,4 +83,18 @@ withFramework(import.meta.dirname, async ({ query, test }) => {
     test.expect(withinTree).toBe(1);
     test.expect(tabbable).toBeGreaterThanOrEqual(1);
   });
+
+  test("an arrow inside a link toggles without navigating", async ({
+    page,
+    q,
+  }) => {
+    const tree = query(q.tree("Arrow behavior"));
+    const item = tree.treeitem("Arrow link folder");
+    const arrow = item.locator("[data-link-arrow]");
+    const url = page.url();
+
+    await arrow.click();
+    await test.expect(item).toHaveAttribute("aria-expanded", "true");
+    test.expect(page.url()).toBe(url);
+  });
 });
