@@ -16,7 +16,7 @@ import {
 } from "@ariakit/react-utils";
 import type { Props } from "@ariakit/react-utils";
 import { disabledFromProps, invariant, isSelfTarget } from "@ariakit/utils";
-import type { ElementType, KeyboardEvent } from "react";
+import type { ElementType, KeyboardEvent, MouseEvent } from "react";
 import { useCallback, useContext, useMemo } from "react";
 import type { CompositeItemOptions } from "../composite/composite-item.tsx";
 import { useCompositeItem } from "../composite/composite-item.tsx";
@@ -109,6 +109,77 @@ function getTreeKeyAction(
   if (event.key === expandKey) return getExpandAction(store, item);
   if (event.key === collapseKey) return getCollapseAction(store, item);
   if (event.key === "*") return () => expandSiblingFolders(store, item);
+  return;
+}
+
+/**
+ * Resolves the selection shortcut for a key event, if any. Runs after the
+ * hierarchy keys and before Composite's generic movement.
+ */
+function getTreeSelectionAction(
+  event: KeyboardEvent,
+  store: TreeStore,
+  id: string,
+  selectable: boolean,
+) {
+  const state = store.getState();
+  const { selectionMode } = state;
+  if (selectionMode === "none") return;
+  // Either platform modifier works, and neither is ever required for an
+  // ordinary toggle.
+  const commandKey = event.ctrlKey || event.metaKey;
+
+  if (selectionMode === "multiple") {
+    if (commandKey && !event.shiftKey && event.key.toLowerCase() === "a") {
+      return () => store.selectAll();
+    }
+    if (
+      commandKey &&
+      event.shiftKey &&
+      (event.key === "Home" || event.key === "End")
+    ) {
+      return () => {
+        const boundaryId = event.key === "Home" ? store.first() : store.last();
+        if (boundaryId == null) return;
+        // The focused item is visible, so the anchor is left alone.
+        store.selectRange(id, boundaryId);
+      };
+    }
+  }
+
+  // Down and Up remain hierarchy keys in a horizontal tree, so this range
+  // shortcut only exists on a vertical one. It acts on the item it moves to,
+  // so it stays available while an unselectable item is focused.
+  if (
+    selectionMode === "multiple" &&
+    event.shiftKey &&
+    !commandKey &&
+    state.orientation !== "horizontal" &&
+    (event.key === "ArrowDown" || event.key === "ArrowUp")
+  ) {
+    return () => {
+      const nextId = event.key === "ArrowDown" ? store.down() : store.up();
+      if (nextId == null) return;
+      const anchorId = store.getState().selectionAnchorId;
+      store.move(nextId);
+      store.toggleSelected(nextId);
+      // Extending a range is not a direct act on the new item, so the anchor
+      // stays where the user last placed it.
+      store.setState("selectionAnchorId", anchorId);
+    };
+  }
+
+  if (!selectable) return;
+
+  if (event.key === " ") {
+    if (selectionMode === "single") return () => store.select(id);
+    if (event.shiftKey) {
+      return () =>
+        store.selectRange(store.getState().selectionAnchorId ?? id, id);
+    }
+    return () => store.toggleSelected(id);
+  }
+
   return;
 }
 
@@ -211,11 +282,43 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
       if (!isSelfTarget(event)) return;
       if (!id) return;
       const action = getTreeKeyAction(event, store, { id, folder, folderPath });
-      if (!action) return;
-      // Preventing default stops browser scrolling and keeps CompositeItem from
-      // applying a second movement for the same key.
+      if (action) {
+        // Preventing default stops browser scrolling and keeps CompositeItem
+        // from applying a second movement for the same key.
+        event.preventDefault();
+        action();
+        return;
+      }
+      const selectionAction = getTreeSelectionAction(
+        event,
+        store,
+        id,
+        effectiveSelectable,
+      );
+      if (!selectionAction) return;
+      // Preventing default on Space also stops Command from synthesizing a
+      // click, which would otherwise toggle the item a second time.
       event.preventDefault();
-      action();
+      selectionAction();
+    });
+
+    const onClickProp = props.onClick;
+
+    const onClick = useEvent((event: MouseEvent<HTMLType>) => {
+      onClickProp?.(event);
+      if (event.defaultPrevented) return;
+      if (!id) return;
+      if (!effectiveSelectable) return;
+      const { selectionMode: mode, selectionAnchorId } = store.getState();
+      // Never prevents default, so links, downloads, and modifier-click
+      // new-tab behavior keep working after the selection updates.
+      if (mode === "single") return store.select(id);
+      if (mode !== "multiple") return;
+      if (event.shiftKey) {
+        store.selectRange(selectionAnchorId ?? id, id);
+      } else {
+        store.toggleSelected(id);
+      }
     });
 
     props = {
@@ -231,6 +334,7 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
       ...props,
       id,
       onKeyDown,
+      onClick,
       // Assigned after the consumer props so `hidden={false}` cannot expose a
       // descendant of a collapsed ancestor.
       hidden: hiddenByAncestor || props.hidden || undefined,

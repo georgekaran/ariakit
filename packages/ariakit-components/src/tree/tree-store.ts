@@ -324,6 +324,53 @@ export function createTreeStore(props: TreeStoreProps = {}): TreeStore {
     }),
   );
 
+  // When focus first enters, the first selected visible node wins over the
+  // first visible node. Composite already defaults `activeId` to the first
+  // enabled rendered item, so this only replaces that default, never a value
+  // the consumer or a move established.
+  setup(tree, () => {
+    let applied = false;
+    return sync(
+      tree,
+      ["items", "renderedItems", "selectedIds", "expandedIds"],
+      () => {
+        if (applied) return;
+        // Read the complete state: the listener only receives the keys it
+        // subscribes to, and this needs `moves` and `activeId` as well.
+        const state = tree.getState();
+        if (state.moves) {
+          applied = true;
+          return;
+        }
+        const visibleItems = getVisibleTreeItems(
+          getTreeSourceItems(state),
+          state.expandedIds,
+        );
+        if (!visibleItems.length) return;
+        const compositeDefaultId = findFirstEnabledItem([
+          ...state.renderedItems,
+        ])?.id;
+        if (
+          state.activeId !== undefined &&
+          state.activeId !== compositeDefaultId
+        ) {
+          applied = true;
+          return;
+        }
+        // A selected node under a collapsed ancestor stays selected but is not
+        // an entry-focus target.
+        const selected = visibleItems.find(
+          (item) => !item.disabled && state.selectedIds.includes(item.id),
+        );
+        const entryId =
+          selected?.id ?? findFirstEnabledItem([...visibleItems])?.id;
+        if (entryId === undefined) return;
+        tree.setState("activeId", entryId);
+        applied = true;
+      },
+    );
+  });
+
   // Re-run normalization when the mode changes so switching to single retains
   // the first selected item in collection order.
   setup(tree, () =>
