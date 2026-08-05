@@ -135,7 +135,12 @@ function getSameInitialItems({
 export const useCompositeTypeahead = createHook<
   TagName,
   CompositeTypeaheadOptions
->(function useCompositeTypeahead({ store, typeahead = true, ...props }) {
+>(function useCompositeTypeahead({
+  store,
+  typeahead = true,
+  getItems: getItemsProp,
+  ...props
+}) {
   const context = useCompositeScopedContext();
   store = store || context;
 
@@ -164,9 +169,12 @@ export const useCompositeTypeahead = createHook<
     // We typically want to use the rendered items, as they're already sorted.
     // However, the composite list might be unmounted or virtualized, in which
     // case we'll use the original items.
-    let enabledItems = getEnabledItems(
-      items.length > renderedItems.length ? items : renderedItems,
-    );
+    const sourceItems =
+      items.length > renderedItems.length ? items : renderedItems;
+    // Consumers may narrow the searchable set before matching begins. Tree uses
+    // this to exclude descendants of collapsed branches.
+    const projectedItems = getItemsProp?.(sourceItems) ?? sourceItems;
+    let enabledItems = getEnabledItems([...projectedItems]);
     if (!isSelfTargetOrItem(event, enabledItems)) {
       return clearChars(typeaheadState);
     }
@@ -255,6 +263,15 @@ export interface CompositeTypeaheadOptions<
    * @default true
    */
   typeahead?: boolean;
+  /**
+   * Narrows the set of items typeahead can match, before disabled items are
+   * filtered out. It receives the complete items when the composite is
+   * virtualized or unmounted, and the rendered items otherwise. Return the same
+   * objects so item identity is preserved.
+   */
+  getItems?: (
+    items: readonly CompositeStoreItem[],
+  ) => readonly CompositeStoreItem[];
 }
 
 export type CompositeTypeaheadProps<T extends ElementType = TagName> = Props<

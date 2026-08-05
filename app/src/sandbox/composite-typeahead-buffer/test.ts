@@ -1,4 +1,4 @@
-import { dispatch, press, q } from "@ariakit/test";
+import { dispatch, focus, press, q } from "@ariakit/test";
 import { expect, test, vi } from "vitest";
 
 // Dispatch only keydown events so this stays compatible with fake timers;
@@ -39,4 +39,20 @@ test("keeps typeahead characters scoped to each composite instance", async () =>
   } finally {
     vi.useRealTimers();
   }
+});
+
+test("skips items a getItems projection removes", async () => {
+  const projected = q.within(q.text.ensure("Apple").closest("section"));
+  await focus(projected.button.ensure("Apple"));
+
+  await typeahead("g");
+
+  expect(projected.button.ensure("Green grape")).toHaveFocus();
+  expect(projected.button.ensure("Grape hidden")).not.toHaveFocus();
+});
+
+test("still matches every item when no projection is supplied", async () => {
+  await focus(q.button.ensure("Alpha"));
+  await typeahead("a");
+  expect(q.button.ensure("Alpine")).toHaveFocus();
 });

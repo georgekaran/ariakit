@@ -143,6 +143,62 @@ function CheckedFiles() {
 }
 
 /**
+ * A horizontal tree moves the hierarchy behavior to Down and Up and leaves
+ * Right and Left to Composite's sequential movement.
+ */
+function HorizontalFiles() {
+  return (
+    <TreeProvider defaultExpandedIds={["h-src"]}>
+      <Tree aria-label="Horizontal files" orientation="horizontal">
+        <TreeItem id="h-src" folder>
+          H src
+        </TreeItem>
+        <TreeItem id="h-button" folderPath={["h-src"]}>
+          H button
+        </TreeItem>
+        <TreeItem id="h-tests" folder folderPath={["h-src"]}>
+          H tests
+        </TreeItem>
+        <TreeItem id="h-package">H package</TreeItem>
+      </Tree>
+    </TreeProvider>
+  );
+}
+
+/** Hierarchy keys stay physical in a vertical RTL tree. */
+function RtlFiles() {
+  return (
+    <TreeProvider defaultExpandedIds={["rtl-src"]}>
+      <Tree aria-label="RTL files" rtl>
+        <TreeItem id="rtl-src" folder>
+          R src
+        </TreeItem>
+        <TreeItem id="rtl-button" folderPath={["rtl-src"]}>
+          R button
+        </TreeItem>
+        <TreeItem id="rtl-tests" folder folderPath={["rtl-src"]}>
+          R tests
+        </TreeItem>
+        <TreeItem id="rtl-package">R package</TreeItem>
+      </Tree>
+    </TreeProvider>
+  );
+}
+
+/** Sequential movement reverses for Right and Left in a horizontal RTL tree. */
+function HorizontalRtlFiles() {
+  return (
+    <TreeProvider>
+      <Tree aria-label="Horizontal RTL files" orientation="horizontal" rtl>
+        <TreeItem id="hr-one">HR one</TreeItem>
+        <TreeItem id="hr-two">HR two</TreeItem>
+        <TreeItem id="hr-three">HR three</TreeItem>
+      </Tree>
+    </TreeProvider>
+  );
+}
+
+/**
  * A non-selectable tree used to check that activation reaches consumer
  * handlers and that a consumer can cancel the built-in hierarchy keys.
  */
@@ -208,6 +264,9 @@ export default function Example() {
       <NestedProjectFiles />
       <GeneratedIds />
       <CheckedFiles />
+      <HorizontalFiles />
+      <RtlFiles />
+      <HorizontalRtlFiles />
       <Activation />
       <InvalidLevel />
     </div>

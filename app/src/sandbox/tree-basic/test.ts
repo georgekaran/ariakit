@@ -387,3 +387,98 @@ test("lets a consumer cancel the hierarchy keys", async () => {
   await press.ArrowUp();
   expect(act().treeitem.ensure("Act blocked")).toHaveFocus();
 });
+
+function horizontal() {
+  return q.within(q.tree.ensure("Horizontal files"));
+}
+
+function rtl() {
+  return q.within(q.tree.ensure("RTL files"));
+}
+
+test("moves typeahead focus to a matching visible node", async () => {
+  await focus(flat().treeitem.ensure("src"));
+  await press("p");
+  expect(flat().treeitem.ensure("package.json")).toHaveFocus();
+});
+
+test("matches a multi-character typeahead buffer", async () => {
+  await focus(flat().treeitem.ensure("src"));
+  // "te" must reach tests without stopping at any other node.
+  await press("t");
+  await press("e");
+  expect(flat().treeitem.ensure("tests")).toHaveFocus();
+});
+
+test("never matches a descendant of a collapsed branch", async () => {
+  await focus(flat().treeitem.ensure("package.json"));
+  await press("b");
+  // The only visible node starting with "b" is button.tsx; the collapsed
+  // button.test.tsx is excluded from the search entirely.
+  expect(flat().treeitem.ensure("button.tsx")).toHaveFocus();
+  await press("b");
+  expect(flat().treeitem.ensure.hidden("button.test.tsx")).not.toHaveFocus();
+  expect(flat().treeitem.ensure("button.tsx")).toHaveFocus();
+});
+
+test("skips disabled nodes during typeahead", async () => {
+  await focus(checked().treeitem.ensure("Checked src"));
+  await press("c");
+  expect(checked().treeitem.ensure("Checked disabled.txt")).not.toHaveFocus();
+});
+
+test("declares horizontal orientation and moves hierarchy with Down and Up", async () => {
+  expect(q.tree.ensure("Horizontal files")).toHaveAttribute(
+    "aria-orientation",
+    "horizontal",
+  );
+  expect(q.tree.ensure("Flat project files")).not.toHaveAttribute(
+    "aria-orientation",
+  );
+
+  await focus(horizontal().treeitem.ensure("H tests"));
+  await press.ArrowDown();
+  expect(horizontal().treeitem.ensure("H tests")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(horizontal().treeitem.ensure("H tests")).toHaveFocus();
+
+  await focus(horizontal().treeitem.ensure("H src"));
+  await press.ArrowDown();
+  expect(horizontal().treeitem.ensure("H button")).toHaveFocus();
+
+  await press.ArrowUp();
+  expect(horizontal().treeitem.ensure("H src")).toHaveFocus();
+  await press.ArrowUp();
+  expect(horizontal().treeitem.ensure("H src")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+});
+
+test("moves sequentially with Right and Left in a horizontal tree", async () => {
+  await focus(horizontal().treeitem.ensure("H src"));
+  await press.ArrowRight();
+  expect(horizontal().treeitem.ensure("H button")).toHaveFocus();
+  await press.ArrowLeft();
+  expect(horizontal().treeitem.ensure("H src")).toHaveFocus();
+});
+
+test("keeps hierarchy keys physical in a vertical RTL tree", async () => {
+  await focus(rtl().treeitem.ensure("R tests"));
+  await press.ArrowRight();
+  expect(rtl().treeitem.ensure("R tests")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+
+  await focus(rtl().treeitem.ensure("R button"));
+  await press.ArrowLeft();
+  expect(rtl().treeitem.ensure("R src")).toHaveFocus();
+
+  // Collection order is unchanged by the direction.
+  await focus(rtl().treeitem.ensure("R src"));
+  await press.ArrowDown();
+  expect(rtl().treeitem.ensure("R button")).toHaveFocus();
+});

@@ -1,3 +1,5 @@
+import { getVisibleTreeItems } from "@ariakit/components/tree/utils";
+import type { TreeStoreItem } from "@ariakit/components/tree/utils";
 import { useStoreState } from "@ariakit/react-store";
 import {
   useWrapElement,
@@ -7,6 +9,9 @@ import {
 } from "@ariakit/react-utils";
 import type { Props } from "@ariakit/react-utils";
 import type { ElementType } from "react";
+import { useCallback } from "react";
+import type { CompositeStoreItem } from "../composite/composite-store.ts";
+import { useCompositeTypeahead } from "../composite/composite-typeahead.tsx";
 import type { CompositeOptions } from "../composite/composite.tsx";
 import { useComposite } from "../composite/composite.tsx";
 import {
@@ -74,6 +79,19 @@ export const useTree = createHook<TagName, TreeOptions>(function useTree({
     "aria-multiselectable": selectionMode === "multiple" ? true : undefined,
     ...props,
   };
+
+  // Read at event time so typeahead always searches the currently visible
+  // nodes rather than a snapshot from render.
+  const getItems = useCallback(
+    (items: readonly CompositeStoreItem[]) =>
+      getVisibleTreeItems(
+        items as readonly TreeStoreItem[],
+        store.getState().expandedIds,
+      ),
+    [store],
+  );
+
+  props = useCompositeTypeahead({ store, typeahead, getItems, ...props });
 
   props = useComposite({ store, ...props });
 
