@@ -18,11 +18,7 @@
   @apply flex flex-col gap-0.5;
 }
 
-.tree-item[aria-level="2"] {
-  @apply ps-6;
-}
-
-.tree-item {
+.tree-item:not([hidden]) {
   @apply
     flex
     scroll-m-2
@@ -39,6 +35,14 @@
     dark:hover:bg-blue-400/15
     dark:data-[active-item]:bg-blue-400/20
   ;
+}
+
+/*
+ * Depth comes from the declared level, never from wrapper elements, and is
+ * declared after the row rule so it wins on equal specificity.
+ */
+.tree-item[aria-level="2"] {
+  @apply ps-6;
 }
 
 /* The current page is marked by weight and a bar, not by color alone. */
@@ -81,13 +85,4 @@
     outline: 3px solid CanvasText;
     outline-offset: -3px;
   }
-}
-
-/*
- * Any explicit `display` overrides the browser's `[hidden] { display: none }`,
- * which would leave descendants of a collapsed branch on screen. Tree sets the
- * `hidden` attribute, so restore it here.
- */
-.tree-item[hidden] {
-  display: none;
 }

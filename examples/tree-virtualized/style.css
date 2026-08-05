@@ -17,11 +17,7 @@
   @apply flex flex-col;
 }
 
-.tree-item[aria-level="2"] {
-  @apply ps-6;
-}
-
-.tree-item {
+.tree-item:not([hidden]) {
   @apply
     flex
     scroll-m-2
@@ -42,6 +38,14 @@
   ;
 }
 
+/*
+ * Depth comes from the declared level, never from wrapper elements, and is
+ * declared after the row rule so it wins on equal specificity.
+ */
+.tree-item[aria-level="2"] {
+  @apply ps-6;
+}
+
 .tree[data-focus-visible] {
   @apply outline-2 outline-blue-600 dark:outline-blue-500;
 }
@@ -55,13 +59,4 @@
   .tree[data-focus-visible] {
     outline: 3px solid CanvasText;
   }
-}
-
-/*
- * Any explicit `display` overrides the browser's `[hidden] { display: none }`,
- * which would leave descendants of a collapsed branch on screen. Tree sets the
- * `hidden` attribute, so restore it here.
- */
-.tree-item[hidden] {
-  display: none;
 }
