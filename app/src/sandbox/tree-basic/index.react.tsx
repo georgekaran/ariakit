@@ -1,4 +1,5 @@
 import {
+  Role,
   Tree,
   TreeFolder,
   TreeItem,
@@ -350,6 +351,35 @@ function TypedUsage() {
   );
 }
 
+/** Row content supplied through `label` rather than children. */
+function Labels() {
+  return (
+    <TreeProvider>
+      <Tree aria-label="Labels">
+        <TreeItem id="label-string" label="String label" />
+        <TreeItem
+          id="label-jsx"
+          label={<span data-label-part>JSX label</span>}
+        />
+        <TreeItem
+          id="label-callback"
+          label="Callback label"
+          render={(props) => (
+            <Role.div {...props} data-callback-render>
+              {props.children}
+            </Role.div>
+          )}
+        />
+        <TreeItem
+          id="label-element"
+          label="Default element label"
+          render={<div data-element-render>Element label</div>}
+        />
+      </Tree>
+    </TreeProvider>
+  );
+}
+
 export default function Example() {
   return (
     <div>
@@ -363,6 +393,7 @@ export default function Example() {
       <HorizontalRtlFiles />
       <Overrides />
       <CheckedOverrides />
+      <Labels />
       <TypedUsage />
       <Activation />
       <InvalidLevel />

@@ -531,3 +531,29 @@ test("preserves an explicit mixed state only in checked mode", () => {
   expect(plain).not.toHaveAttribute("aria-selected");
   expect(plain).toHaveAttribute("aria-checked", "false");
 });
+
+test("uses label as default row content", () => {
+  const labels = q.within(q.tree.ensure("Labels"));
+  expect(labels.treeitem.ensure("String label")).toHaveAttribute(
+    "id",
+    "label-string",
+  );
+  expect(
+    labels.treeitem.ensure("JSX label").querySelector("[data-label-part]"),
+  ).toBeInTheDocument();
+});
+
+test("passes label to a render callback as children", () => {
+  const item = q
+    .within(q.tree.ensure("Labels"))
+    .treeitem.ensure("Callback label");
+  expect(item).toHaveAttribute("data-callback-render");
+  expect(item).toHaveTextContent("Callback label");
+});
+
+test("keeps element-form render children precedence", () => {
+  const labels = q.within(q.tree.ensure("Labels"));
+  const item = labels.treeitem.ensure("Element label");
+  expect(item).toHaveAttribute("data-element-render");
+  expect(item).not.toHaveTextContent("Default element label");
+});

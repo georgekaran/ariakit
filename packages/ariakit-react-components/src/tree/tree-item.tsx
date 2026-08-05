@@ -16,7 +16,7 @@ import {
 } from "@ariakit/react-utils";
 import type { Props } from "@ariakit/react-utils";
 import { disabledFromProps, invariant, isSelfTarget } from "@ariakit/utils";
-import type { ElementType, KeyboardEvent, MouseEvent } from "react";
+import type { ElementType, KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { useCallback, useContext, useMemo } from "react";
 import type { CompositeItemOptions } from "../composite/composite-item.tsx";
 import { useCompositeItem } from "../composite/composite-item.tsx";
@@ -200,6 +200,7 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
     folderPath: folderPathProp,
     selectable: selectableProp,
     getItem: getItemProp,
+    label,
     ...props
   }) {
     const context = useTreeScopedContext();
@@ -327,6 +328,7 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
 
     props = {
       role: "treeitem",
+      children: label,
       // Explicit consumer hierarchy values win, including aria-setsize={-1}
       // for an unknown remote total.
       "aria-level": metadata?.level ?? folderPath.length + 1,
@@ -386,6 +388,11 @@ export interface TreeItemOptions<
    * context will be used.
    */
   store?: TreeStore;
+  /**
+   * The content rendered in the tree item row. The `children` prop is reserved
+   * for structural descendant items.
+   */
+  label?: ReactNode;
   /**
    * Whether the item is a branch that can be expanded. A branch is valid before
    * any child is loaded, so this is never inferred from having children.
