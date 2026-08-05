@@ -5,8 +5,9 @@ import { TreeLevel } from "@ariakit/react-components/tree/tree-level";
 import { TreeProvider } from "@ariakit/react-components/tree/tree-provider";
 import { TreeRenderer } from "@ariakit/react-components/tree/tree-renderer";
 import type { TreeRendererItemObject } from "@ariakit/react-components/tree/tree-renderer";
-import type { CSSProperties, KeyboardEvent } from "react";
+import type { KeyboardEvent } from "react";
 import { useState } from "react";
+import "./style.css";
 
 interface FixtureNode {
   id: string;
@@ -116,10 +117,6 @@ function useTreeFixture(prefix: string) {
   return { activeId, expandedIds, visibleNodes, onKeyDown };
 }
 
-function getRowStyle(level: number): CSSProperties {
-  return { paddingInlineStart: `${level}rem` };
-}
-
 function FlatTree() {
   const { activeId, expandedIds, visibleNodes, onKeyDown } =
     useTreeFixture("flat");
@@ -138,7 +135,6 @@ function FlatTree() {
           aria-expanded={
             "folder" in node ? expandedIds.includes(node.id) : undefined
           }
-          style={getRowStyle(node.level)}
           onKeyDown={(event) => onKeyDown(event, node.id)}
         >
           {node.name}
@@ -172,7 +168,6 @@ function NestedTree() {
             role="treeitem"
             tabIndex={node.id === activeId ? 0 : -1}
             aria-expanded={"folder" in node ? open : undefined}
-            style={getRowStyle(node.level)}
             onKeyDown={(event) => onKeyDown(event, node.id)}
           >
             {node.name}
@@ -347,6 +342,7 @@ function VirtualizedTree() {
     <TreeProvider items={virtualItems} defaultExpandedIds={["w-root"]}>
       <TreeRenderer
         aria-label="Production virtualized"
+        className="virtualized-tree"
         items={virtualItems}
         itemSize={32}
         initialItems={6}
@@ -361,21 +357,82 @@ function VirtualizedTree() {
   );
 }
 
+interface CaseProps {
+  title: string;
+  note: string;
+  children: React.ReactNode;
+}
+
+function Case({ title, note, children }: CaseProps) {
+  return (
+    <section className="case">
+      <h3 className="case-heading">{title}</h3>
+      <p className="case-note">{note}</p>
+      {children}
+    </section>
+  );
+}
+
 export default function Example() {
   return (
-    <div>
-      <h2 id="flat-heading">Flat</h2>
-      <FlatTree />
-      <h2 id="nested-heading">Nested</h2>
-      <NestedTree />
-      <h2>Production cases</h2>
-      <DeclarativeNested />
-      <SingleSelection />
-      <MultipleSelected />
-      <MultipleChecked />
-      <VirtualFocus />
-      <HorizontalTree />
-      <VirtualizedTree />
+    <div className="page">
+      <h2 className="page-heading">Comparison controls</h2>
+      <Case
+        title="1. Flat project files"
+        note="Declared hierarchy. Every item is a direct child of the tree."
+      >
+        <FlatTree />
+      </Case>
+      <Case
+        title="2. Nested project files"
+        note="Control. Hierarchy comes from nested role=group ownership."
+      >
+        <NestedTree />
+      </Case>
+
+      <h2 className="page-heading">Production cases</h2>
+      <Case
+        title="3. Production nested"
+        note="TreeFolder and TreeLevel sugar over the flat model."
+      >
+        <DeclarativeNested />
+      </Case>
+      <Case
+        title="4. Production single"
+        note="Single selection. Entry focus starts on the selected node."
+      >
+        <SingleSelection />
+      </Case>
+      <Case
+        title="5. Production multiple selected"
+        note="Modifier-free multiple selection with disabled and unselectable nodes."
+      >
+        <MultipleSelected />
+      </Case>
+      <Case
+        title="6. Production multiple checked"
+        note="Checkbox-like selection using aria-checked."
+      >
+        <MultipleChecked />
+      </Case>
+      <Case
+        title="7. Production virtual focus"
+        note="Active item tracked with aria-activedescendant."
+      >
+        <VirtualFocus />
+      </Case>
+      <Case
+        title="8. Production horizontal"
+        note="Down and Up drive the hierarchy; Right and Left move sequentially."
+      >
+        <HorizontalTree />
+      </Case>
+      <Case
+        title="9. Production virtualized"
+        note="Twenty siblings in the data, only a window mounted in the DOM."
+      >
+        <VirtualizedTree />
+      </Case>
     </div>
   );
 }

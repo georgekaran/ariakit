@@ -185,6 +185,11 @@ everything after is confirmation.
    (`VO`+`F8`) -> **Visuals** -> **Caption Panel** -> "Show caption panel".
 5. `Tab` until focus lands in the first tree.
 
+The page is styled and each case carries a visible number that matches the step
+numbers below. Focus is an outline, selection is a leading bar plus a weight
+change, and the disclosure triangle is drawn with borders and empty generated
+content, so no decoration reaches the accessibility tree.
+
 ### How to read the expectations
 
 The exact wording and the order of the parts differ between macOS versions, so
