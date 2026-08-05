@@ -1,13 +1,7 @@
-import {
-  Role,
-  Tree,
-  TreeFolder,
-  TreeItem,
-  TreeLevel,
-  TreeProvider,
-} from "@ariakit/react";
+import { Role, Tree, TreeItem, TreeProvider } from "@ariakit/react";
+import { useTreeLevel } from "@ariakit/react-components/tree/tree-level";
 import { useTreeContext } from "@ariakit/react/tree";
-import type { ComponentProps, ElementRef } from "react";
+import type { ComponentProps, CSSProperties, ElementRef } from "react";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -45,19 +39,18 @@ function FlatProjectFiles() {
   );
 }
 
-function SemiNestedProjectFiles() {
+function MixedProjectFiles() {
   return (
-    <TreeProvider defaultExpandedIds={["semi-src"]} selectionMode="single">
-      <Tree aria-label="Semi-nested project files">
-        <TreeItem id="semi-src" folder label="src" />
-        <TreeLevel folderPath={["semi-src"]}>
-          <TreeItem id="semi-button" label="button.tsx" />
-          <TreeItem id="semi-tests" folder label="tests" />
-          <TreeLevel folderPath={["semi-src", "semi-tests"]}>
-            <TreeItem id="semi-button-test" label="button.test.tsx" />
-          </TreeLevel>
-        </TreeLevel>
-        <TreeItem id="semi-package" label="package.json" />
+    <TreeProvider defaultExpandedIds={["mixed-src"]} selectionMode="single">
+      <Tree aria-label="Mixed project files">
+        <TreeItem id="mixed-src" label="src">
+          <TreeItem id="mixed-button" label="button.tsx" />
+          <TreeItem id="mixed-tests" label="tests">
+            <TreeItem id="mixed-button-test" label="button.test.tsx" />
+          </TreeItem>
+        </TreeItem>
+        {/* An explicit root path proves precedence without a level provider. */}
+        <TreeItem id="mixed-package" label="package.json" folderPath={[]} />
       </Tree>
     </TreeProvider>
   );
@@ -67,18 +60,12 @@ function NestedProjectFiles() {
   return (
     <TreeProvider defaultExpandedIds={["nested-src"]} selectionMode="single">
       <Tree aria-label="Nested project files">
-        <TreeFolder id="nested-src">
-          <TreeItem label="src" />
-          <TreeLevel>
-            <TreeItem id="nested-button" label="button.tsx" />
-            <TreeFolder id="nested-tests">
-              <TreeItem label="tests" />
-              <TreeLevel>
-                <TreeItem id="nested-button-test" label="button.test.tsx" />
-              </TreeLevel>
-            </TreeFolder>
-          </TreeLevel>
-        </TreeFolder>
+        <TreeItem id="nested-src" label="src">
+          <TreeItem id="nested-button" label="button.tsx" />
+          <TreeItem id="nested-tests" label="tests">
+            <TreeItem id="nested-button-test" label="button.test.tsx" />
+          </TreeItem>
+        </TreeItem>
         <TreeItem id="nested-package" label="package.json" />
       </Tree>
     </TreeProvider>
@@ -93,13 +80,60 @@ function GeneratedIds() {
   return (
     <TreeProvider>
       <Tree aria-label="Generated ids">
-        <TreeFolder>
-          <TreeItem label="Generated root" />
-          <TreeLevel>
-            <TreeItem label="Generated child" />
-            <TreeItem folderPath={[]} label="Generated override" />
-          </TreeLevel>
-        </TreeFolder>
+        <TreeItem label="Generated root">
+          <TreeItem label="Generated child" />
+          <TreeItem label="Generated override" folderPath={[]} />
+        </TreeItem>
+      </Tree>
+    </TreeProvider>
+  );
+}
+
+/** Calls the public hook before the underlying TreeItem renders. */
+function LeveledTreeItem(props: ComponentProps<typeof TreeItem>) {
+  const level = useTreeLevel(props);
+  return <TreeItem {...props} data-hook-level={level} />;
+}
+
+function Levels() {
+  return (
+    <TreeProvider defaultExpandedIds={["level-root", "level-child"]}>
+      <Tree aria-label="Levels">
+        <LeveledTreeItem id="level-root" label="Level root">
+          <LeveledTreeItem id="level-child" label="Level child">
+            <LeveledTreeItem id="level-grandchild" label="Level grandchild" />
+          </LeveledTreeItem>
+          <LeveledTreeItem
+            id="level-override"
+            label="Level override"
+            folderPath={[]}
+          />
+        </LeveledTreeItem>
+        <LeveledTreeItem
+          id="level-style-override"
+          label="Level style override"
+          style={{ "--level": 99 } as CSSProperties}
+        />
+      </Tree>
+    </TreeProvider>
+  );
+}
+
+/** Any supplied structural children value infers a folder. */
+function FolderInference() {
+  return (
+    <TreeProvider>
+      <Tree aria-label="Folder inference">
+        <TreeItem id="null-folder" label="Null folder">
+          {null}
+        </TreeItem>
+        <TreeItem id="false-folder" label="False folder">
+          {false}
+        </TreeItem>
+        <TreeItem id="array-folder" label="Array folder">
+          {[]}
+        </TreeItem>
+        <TreeItem id="explicit-folder" folder label="Explicit folder" />
       </Tree>
     </TreeProvider>
   );
@@ -297,19 +331,19 @@ function Activation() {
  * Rendered on demand so the development warning it triggers never fires during
  * unrelated tests.
  */
-function InvalidLevel() {
+function InvalidFolder() {
   const [shown, setShown] = useState(false);
   return (
     <div>
       <button type="button" onClick={() => setShown(true)}>
-        Show invalid level
+        Show invalid folder
       </button>
       {shown ? (
         <TreeProvider>
-          <Tree aria-label="Invalid level">
-            <TreeLevel>
-              <TreeItem id="invalid-item" label="Invalid item" />
-            </TreeLevel>
+          <Tree aria-label="Invalid folder">
+            <TreeItem id="invalid-item" folder={false} label="Invalid item">
+              <TreeItem id="invalid-child" label="Invalid child" />
+            </TreeItem>
           </Tree>
         </TreeProvider>
       ) : null}
@@ -378,9 +412,11 @@ export default function Example() {
   return (
     <div>
       <FlatProjectFiles />
-      <SemiNestedProjectFiles />
+      <MixedProjectFiles />
       <NestedProjectFiles />
       <GeneratedIds />
+      <Levels />
+      <FolderInference />
       <CheckedFiles />
       <HorizontalFiles />
       <RtlFiles />
@@ -390,7 +426,7 @@ export default function Example() {
       <Labels />
       <TypedUsage />
       <Activation />
-      <InvalidLevel />
+      <InvalidFolder />
     </div>
   );
 }

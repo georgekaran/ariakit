@@ -20,6 +20,24 @@ import { TreeFolderContext, TreeLevelContext } from "./tree-context.tsx";
  * </TreeFolder>
  * ```
  */
+/**
+ * Returns the zero-based depth of a tree item, either from an explicit
+ * `folderPath` or from the inherited ancestor path. Semantic `aria-level` is
+ * one-based, so it is always this value plus one.
+ * @see https://ariakit.com/components/tree
+ * @example
+ * ```jsx
+ * function CustomTreeItem(props) {
+ *   const level = useTreeLevel(props);
+ *   return <TreeItem {...props} data-level={level} />;
+ * }
+ * ```
+ */
+export function useTreeLevel(props: { folderPath?: readonly string[] } = {}) {
+  const context = useContext(TreeLevelContext);
+  return (props.folderPath ?? context).length;
+}
+
 export function TreeLevel({
   folderPath: folderPathProp,
   children,

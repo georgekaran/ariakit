@@ -21,7 +21,10 @@ export type {
   TreeLevelOptions,
   TreeLevelProps,
 } from "@ariakit/react-components/tree/tree-level";
-export { TreeLevel } from "@ariakit/react-components/tree/tree-level";
+export {
+  TreeLevel,
+  useTreeLevel,
+} from "@ariakit/react-components/tree/tree-level";
 export type { TreeProviderProps } from "@ariakit/react-components/tree/tree-provider";
 export { TreeProvider } from "@ariakit/react-components/tree/tree-provider";
 export type {

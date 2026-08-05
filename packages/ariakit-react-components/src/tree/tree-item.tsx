@@ -10,13 +10,25 @@ import { useStoreState } from "@ariakit/react-store";
 import {
   useEvent,
   useId,
+  useWrapElement,
   createElement,
   createHook,
   forwardRef,
 } from "@ariakit/react-utils";
 import type { Props } from "@ariakit/react-utils";
-import { disabledFromProps, invariant, isSelfTarget } from "@ariakit/utils";
-import type { ElementType, KeyboardEvent, MouseEvent, ReactNode } from "react";
+import {
+  disabledFromProps,
+  invariant,
+  isSelfTarget,
+  warnOnce,
+} from "@ariakit/utils";
+import type {
+  CSSProperties,
+  ElementType,
+  KeyboardEvent,
+  MouseEvent,
+  ReactNode,
+} from "react";
 import { useCallback, useContext, useMemo } from "react";
 import type { CompositeItemOptions } from "../composite/composite-item.tsx";
 import { useCompositeItem } from "../composite/composite-item.tsx";
@@ -25,6 +37,7 @@ import {
   TreeLevelContext,
   useTreeScopedContext,
 } from "./tree-context.tsx";
+import { useTreeLevel } from "./tree-level.tsx";
 import type { TreeStore } from "./tree-store.ts";
 
 const TagName = "div" satisfies ElementType;
@@ -201,6 +214,7 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
     selectable: selectableProp,
     getItem: getItemProp,
     label,
+    children: structuralChildren,
     ...props
   }) {
     const context = useTreeScopedContext();
@@ -220,7 +234,21 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
     const defaultId = useId();
     const id = props.id || folderContext?.id || defaultId;
 
-    const folder = folderProp ?? !!folderContext;
+    // Any supplied children value means this row owns descendants, including
+    // null, false, and an empty array.
+    const hasStructuralChildren = structuralChildren !== undefined;
+
+    if (
+      process.env.NODE_ENV !== "production" &&
+      folderProp === false &&
+      hasStructuralChildren
+    ) {
+      warnOnce(
+        "TreeItem cannot receive folder={false} when it has structural children.",
+      );
+    }
+
+    const folder = hasStructuralChildren || (folderProp ?? !!folderContext);
 
     // A path supplied inline creates a new array on every render, which would
     // otherwise re-register the item in an endless loop. Comparing by content
@@ -229,6 +257,15 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
     const folderPathKey = suppliedPath.join("");
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed by content
     const folderPath = useMemo(() => suppliedPath, [folderPathKey]);
+
+    const level = useTreeLevel({ folderPath: folderPathProp });
+
+    // The path inherited by this row's descendants. `folderPath` is already
+    // memoized by content and `id` is a string, so both are stable references.
+    const descendantPath = useMemo(
+      () => (id ? [...folderPath, id] : folderPath),
+      [folderPath, id],
+    );
 
     const disabled = disabledFromProps(props);
 
@@ -336,6 +373,10 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
       "aria-setsize": metadata?.setSize,
       "data-selected": (effectiveSelectable && selected) || undefined,
       ...props,
+      style: {
+        "--level": level,
+        ...props.style,
+      } as CSSProperties,
       id,
       onKeyDown,
       onClick,
@@ -348,9 +389,25 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
       "aria-expanded": folder ? expanded : undefined,
       "aria-selected": useSelectedAttribute ? selected : undefined,
       "aria-checked": useCheckedAttribute ? checkedValue : undefined,
-    };
+    } as typeof props & { children?: ReactNode };
 
     props = useCompositeItem<TagName>({ store, getItem, ...props });
+
+    // Descendants render as following siblings of this row, never inside it, so
+    // every treeitem stays a direct child of the tree. This runs after
+    // `useCompositeItem` so Composite's item provider wraps the row alone.
+    props = useWrapElement(
+      props,
+      (element) => (
+        <>
+          {element}
+          <TreeLevelContext.Provider value={descendantPath}>
+            {structuralChildren}
+          </TreeLevelContext.Provider>
+        </>
+      ),
+      [descendantPath, structuralChildren],
+    );
 
     return props;
   },
@@ -366,8 +423,8 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
  * ```jsx
  * <TreeProvider defaultExpandedIds={["src"]}>
  *   <Tree aria-label="Project files">
- *     <TreeItem id="src" folder>src</TreeItem>
- *     <TreeItem id="button" folderPath={["src"]}>button.tsx</TreeItem>
+ *     <TreeItem id="src" folder label="src" />
+ *     <TreeItem id="button" folderPath={["src"]} label="button.tsx" />
  *   </Tree>
  * </TreeProvider>
  * ```

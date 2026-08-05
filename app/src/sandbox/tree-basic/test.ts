@@ -189,7 +189,7 @@ test("makes every authoring form semantically equivalent", () => {
     },
   ]);
 
-  expect(semantics("Semi-nested project files")).toEqual(
+  expect(semantics("Mixed project files")).toEqual(
     semantics("Flat project files"),
   );
   expect(semantics("Nested project files")).toEqual(
@@ -197,10 +197,10 @@ test("makes every authoring form semantically equivalent", () => {
   );
 });
 
-test("adds no wrapper elements for the nested providers", () => {
+test("renders every authoring form as flat sibling rows", () => {
   for (const label of [
     "Flat project files",
-    "Semi-nested project files",
+    "Mixed project files",
     "Nested project files",
   ]) {
     const tree = q.tree.ensure(label);
@@ -230,12 +230,15 @@ test("generates a stable folder id and lets an item override the level", () => {
   expect(override).toBeVisible();
 });
 
-test("warns once for a TreeLevel without a folder or a path", async () => {
+test("warns once for folder={false} with structural children", async () => {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-  await click(q.button.ensure("Show invalid level"));
-  expect(q.treeitem.ensure("Invalid item")).toBeInTheDocument();
+  await click(q.button.ensure("Show invalid folder"));
   expect(warn).toHaveBeenCalledTimes(1);
-  expect(warn.mock.calls[0]?.[0]).toMatch(/TreeLevel must be nested/);
+  expect(warn.mock.calls[0]?.[0]).toMatch(/folder=\{false\}/);
+  // It still behaves as a folder, because the children have to go somewhere.
+  expect(
+    q.within(q.tree.ensure("Invalid folder")).treeitem.ensure("Invalid item"),
+  ).toHaveAttribute("aria-expanded", "false");
   warn.mockRestore();
 });
 
@@ -556,4 +559,38 @@ test("keeps element-form render children precedence", () => {
   const item = labels.treeitem.ensure("Element label");
   expect(item).toHaveAttribute("data-element-render");
   expect(item).not.toHaveTextContent("Default element label");
+});
+
+test("infers folders from every supplied structural children value", () => {
+  const tree = q.within(q.tree.ensure("Folder inference"));
+  for (const name of [
+    "Null folder",
+    "False folder",
+    "Array folder",
+    "Explicit folder",
+  ]) {
+    expect(tree.treeitem.ensure(name)).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  }
+});
+
+test("exposes zero-based hook and CSS levels with one-based ARIA", () => {
+  const tree = q.within(q.tree.ensure("Levels"));
+  const cases = [
+    ["Level root", "0", "1"],
+    ["Level child", "1", "2"],
+    ["Level grandchild", "2", "3"],
+    ["Level override", "0", "1"],
+  ] as const;
+  for (const [name, hookLevel, ariaLevel] of cases) {
+    const item = tree.treeitem.ensure.hidden(name);
+    expect(item).toHaveAttribute("data-hook-level", hookLevel);
+    expect(item.style.getPropertyValue("--level")).toBe(hookLevel);
+    expect(item).toHaveAttribute("aria-level", ariaLevel);
+  }
+  const override = tree.treeitem.ensure("Level style override");
+  expect(override.style.getPropertyValue("--level")).toBe("99");
+  expect(override).toHaveAttribute("aria-level", "1");
 });
