@@ -74,6 +74,7 @@
     "./tab": "./src/tab.ts",
     "./toolbar": "./src/toolbar.ts",
     "./tooltip": "./src/tooltip.ts",
+    "./tree": "./src/tree.ts",
     "./visually-hidden": "./src/visually-hidden.ts",
     "./package.json": "./package.json"
   }

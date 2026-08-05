@@ -1,7 +1,4 @@
-import { Tree } from "@ariakit/react-components/tree/tree";
-import { TreeItem } from "@ariakit/react-components/tree/tree-item";
-import { TreeProvider } from "@ariakit/react-components/tree/tree-provider";
-import { useTreeStore } from "@ariakit/react-components/tree/tree-store";
+import { Tree, TreeItem, TreeProvider, useTreeStore } from "@ariakit/react";
 import { useStoreState } from "@ariakit/react-store";
 import { useState } from "react";
 

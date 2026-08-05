@@ -1,10 +1,12 @@
-import { Tree } from "@ariakit/react-components/tree/tree";
-import { TreeFolder } from "@ariakit/react-components/tree/tree-folder";
-import { TreeItem } from "@ariakit/react-components/tree/tree-item";
-import { TreeLevel } from "@ariakit/react-components/tree/tree-level";
-import { TreeProvider } from "@ariakit/react-components/tree/tree-provider";
-import { TreeRenderer } from "@ariakit/react-components/tree/tree-renderer";
-import type { TreeRendererItemObject } from "@ariakit/react-components/tree/tree-renderer";
+import {
+  Tree,
+  TreeFolder,
+  TreeItem,
+  TreeLevel,
+  TreeProvider,
+  TreeRenderer,
+} from "@ariakit/react";
+import type { TreeRendererItemObject } from "@ariakit/react";
 import type { KeyboardEvent } from "react";
 import { useState } from "react";
 import "./style.css";

@@ -1,8 +1,5 @@
-import { Tree } from "@ariakit/react-components/tree/tree";
-import { TreeItem } from "@ariakit/react-components/tree/tree-item";
-import { TreeProvider } from "@ariakit/react-components/tree/tree-provider";
-import { TreeRenderer } from "@ariakit/react-components/tree/tree-renderer";
-import type { TreeRendererItemObject } from "@ariakit/react-components/tree/tree-renderer";
+import { Tree, TreeItem, TreeProvider, TreeRenderer } from "@ariakit/react";
+import type { TreeRendererItemObject } from "@ariakit/react";
 
 /**
  * "tests" is expanded but its ancestor "src" is not, so the whole branch below

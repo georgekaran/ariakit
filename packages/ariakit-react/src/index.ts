@@ -24,4 +24,5 @@ export * from "./store.ts";
 export * from "./tab.ts";
 export * from "./toolbar.ts";
 export * from "./tooltip.ts";
+export * from "./tree.ts";
 export * from "./visually-hidden.ts";

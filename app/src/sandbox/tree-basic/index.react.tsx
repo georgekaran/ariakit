@@ -1,8 +1,12 @@
-import { Tree } from "@ariakit/react-components/tree/tree";
-import { TreeFolder } from "@ariakit/react-components/tree/tree-folder";
-import { TreeItem } from "@ariakit/react-components/tree/tree-item";
-import { TreeLevel } from "@ariakit/react-components/tree/tree-level";
-import { TreeProvider } from "@ariakit/react-components/tree/tree-provider";
+import {
+  Tree,
+  TreeFolder,
+  TreeItem,
+  TreeLevel,
+  TreeProvider,
+} from "@ariakit/react";
+import { useTreeContext } from "@ariakit/react/tree";
+import type { ComponentProps, ElementRef } from "react";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -316,6 +320,36 @@ function InvalidLevel() {
   );
 }
 
+/**
+ * Compile assertions for the public surface: the `@ariakit/react/tree` subpath
+ * entry, ref inference through `ElementRef`, and prop inference through
+ * `ComponentProps`.
+ */
+function SubpathContextProbe() {
+  const store = useTreeContext();
+  return <span hidden data-has-store={!!store} />;
+}
+
+function TypedUsage() {
+  const treeRef = useRef<ElementRef<typeof Tree>>(null);
+  const itemProps: ComponentProps<typeof TreeItem> = {
+    id: "typed-a",
+    folder: true,
+    children: "Typed a",
+  };
+  return (
+    <TreeProvider defaultExpandedIds={["typed-a"]}>
+      <Tree ref={treeRef} aria-label="Typed usage">
+        <TreeItem {...itemProps} />
+        <TreeItem id="typed-b" folderPath={["typed-a"]}>
+          Typed b
+        </TreeItem>
+      </Tree>
+      <SubpathContextProbe />
+    </TreeProvider>
+  );
+}
+
 export default function Example() {
   return (
     <div>
@@ -329,6 +363,7 @@ export default function Example() {
       <HorizontalRtlFiles />
       <Overrides />
       <CheckedOverrides />
+      <TypedUsage />
       <Activation />
       <InvalidLevel />
     </div>

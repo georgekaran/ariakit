@@ -1,6 +1,4 @@
-import { Tree } from "@ariakit/react-components/tree/tree";
-import { TreeItem } from "@ariakit/react-components/tree/tree-item";
-import { TreeProvider } from "@ariakit/react-components/tree/tree-provider";
+import { Tree, TreeItem, TreeProvider } from "@ariakit/react";
 import { useState } from "react";
 
 /** Navigation trees use `aria-current`, never selection state. */

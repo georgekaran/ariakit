@@ -1,9 +1,14 @@
-import { Tree } from "@ariakit/react-components/tree/tree";
-import { useTreeContext } from "@ariakit/react-components/tree/tree-context";
-import { TreeItem } from "@ariakit/react-components/tree/tree-item";
-import { TreeProvider } from "@ariakit/react-components/tree/tree-provider";
-import { TreeRenderer } from "@ariakit/react-components/tree/tree-renderer";
-import type { TreeRendererItemObject } from "@ariakit/react-components/tree/tree-renderer";
+import {
+  Tree,
+  TreeItem,
+  TreeProvider,
+  TreeRenderer,
+  useTreeContext,
+} from "@ariakit/react";
+import type {
+  TreeRendererItemObject,
+  TreeRendererItemProps,
+} from "@ariakit/react";
 import { useStoreState } from "@ariakit/react-store";
 import { useState } from "react";
 import "./style.css";
@@ -62,6 +67,18 @@ function createFileItems(): FileItem[] {
 }
 
 const items = createFileItems();
+
+/**
+ * Compile assertion for the exported generic: the item props carry the
+ * consumer's own item type, so `name` is known here without a cast.
+ */
+function renderFileItem({ name, ...item }: TreeRendererItemProps<FileItem>) {
+  return (
+    <TreeItem key={item.id} {...item}>
+      {name}
+    </TreeItem>
+  );
+}
 
 function Status() {
   const store = useTreeContext();
@@ -132,11 +149,7 @@ function VirtualTree() {
           itemSize={32}
           initialItems={12}
         >
-          {({ name, ...item }) => (
-            <TreeItem key={item.id} {...item}>
-              {name}
-            </TreeItem>
-          )}
+          {renderFileItem}
         </TreeRenderer>
       </div>
       <Status />
