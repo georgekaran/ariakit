@@ -1,0 +1,82 @@
+.wrapper {
+  @apply flex w-64 flex-col gap-2;
+}
+
+.tree {
+  @apply
+    flex
+    flex-col
+    gap-0.5
+    rounded-lg
+    bg-white
+    p-2
+    shadow
+    dark:bg-gray-700
+    dark:shadow-dark
+  ;
+}
+
+.tree-item[aria-level="2"] {
+  @apply ps-6;
+}
+
+.tree-item {
+  @apply
+    flex
+    scroll-m-2
+    items-center
+    rounded
+    px-2
+    py-1.5
+    text-base
+    select-none
+    ps-2
+    hover:bg-blue-600/10
+    data-[active-item]:bg-blue-600/15
+    data-[selected]:bg-blue-600
+    data-[selected]:text-white
+    dark:hover:bg-blue-400/15
+    dark:data-[active-item]:bg-blue-400/20
+    dark:data-[selected]:bg-blue-500
+  ;
+}
+
+.tree-item[data-focus-visible] {
+  @apply outline-2 outline-blue-600 dark:outline-blue-500;
+}
+
+/* Selection is never signalled by color alone. */
+.tree-item[data-selected]::after {
+  @apply ms-auto text-sm;
+
+  content: "✓";
+}
+
+.toolbar {
+  @apply flex items-center justify-between gap-2 text-sm;
+}
+
+.button {
+  @apply
+    h-8
+    rounded
+    bg-blue-600
+    px-3
+    text-white
+    disabled:opacity-50
+    hover:bg-blue-800
+    dark:bg-blue-500
+  ;
+}
+
+@media (forced-colors: active) {
+  .tree-item[data-selected] {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .tree-item[data-focus-visible] {
+    outline: 3px solid CanvasText;
+    outline-offset: -3px;
+  }
+}

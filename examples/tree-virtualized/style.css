@@ -1,0 +1,58 @@
+.viewport {
+  @apply
+    h-72
+    w-72
+    overflow-auto
+    overscroll-contain
+    rounded-lg
+    bg-white
+    p-2
+    shadow
+    dark:bg-gray-700
+    dark:shadow-dark
+  ;
+}
+
+.tree {
+  @apply flex flex-col;
+}
+
+.tree-item[aria-level="2"] {
+  @apply ps-6;
+}
+
+.tree-item {
+  @apply
+    flex
+    scroll-m-2
+    items-center
+    rounded
+    px-2
+    py-1.5
+    text-base
+    select-none
+    ps-2
+    hover:bg-blue-600/10
+    data-[active-item]:bg-blue-600/15
+    data-[selected]:bg-blue-600
+    data-[selected]:text-white
+    dark:hover:bg-blue-400/15
+    dark:data-[active-item]:bg-blue-400/20
+    dark:data-[selected]:bg-blue-500
+  ;
+}
+
+.tree[data-focus-visible] {
+  @apply outline-2 outline-blue-600 dark:outline-blue-500;
+}
+
+@media (forced-colors: active) {
+  .tree-item[data-active-item] {
+    outline: 1px dashed CanvasText;
+    outline-offset: -1px;
+  }
+
+  .tree[data-focus-visible] {
+    outline: 3px solid CanvasText;
+  }
+}
