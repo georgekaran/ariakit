@@ -367,7 +367,11 @@ test("activates through command semantics with Enter", async () => {
   await press.Enter();
   const activationStatus = q.status
     .all()
-    .find((element) => !element.hasAttribute("data-arrow-events"));
+    .find(
+      (element) =>
+        !element.hasAttribute("data-arrow-events") &&
+        !element.hasAttribute("data-toggle-events"),
+    );
   expect(activationStatus).toHaveTextContent("act-src");
 });
 
@@ -693,4 +697,80 @@ test("does not toggle a disabled folder from its arrow", async () => {
     "aria-expanded",
     "false",
   );
+});
+
+const toggles = () => q.within(q.tree.ensure("Toggle behavior"));
+
+test("a default row click selects and toggles a folder once", async () => {
+  const item = toggles().treeitem.ensure("Toggle default");
+  await click(item);
+  expect(item).toHaveAttribute("aria-selected", "true");
+  expect(item).toHaveAttribute("aria-expanded", "true");
+});
+
+test("toggleOnClick false preserves selection without expansion", async () => {
+  const item = toggles().treeitem.ensure("Toggle click false");
+  await click(item);
+  expect(item).toHaveAttribute("aria-selected", "true");
+  expect(item).toHaveAttribute("aria-expanded", "false");
+});
+
+test("runs the row consumer before the click toggle callback", async () => {
+  const item = toggles().treeitem.ensure("Toggle callback true");
+  await click(item);
+  expect(document.querySelector("[data-toggle-events]")).toHaveTextContent(
+    "consumer:false,click:click",
+  );
+  expect(item).toHaveAttribute("aria-expanded", "true");
+});
+
+test("toggleOnKeyPress handles Enter without a synthetic click", async () => {
+  const item = toggles().treeitem.ensure("Toggle Enter");
+  await focus(item);
+  await press.Enter();
+  expect(item).toHaveAttribute("aria-expanded", "true");
+  expect(item).toHaveAttribute("aria-selected", "false");
+});
+
+test("passes Enter to the toggleOnKeyPress callback", async () => {
+  const item = toggles().treeitem.ensure("Toggle key callback");
+  await focus(item);
+  await press.Enter();
+  expect(document.querySelector("[data-toggle-events]")).toHaveTextContent(
+    "key:Enter",
+  );
+  expect(item).toHaveAttribute("aria-expanded", "true");
+  expect(item).toHaveAttribute("aria-selected", "false");
+});
+
+test("Space remains selection-only", async () => {
+  const item = toggles().treeitem.ensure("Toggle callback false");
+  await focus(item);
+  await press.Space();
+  expect(item).toHaveAttribute("aria-selected", "true");
+  expect(item).toHaveAttribute("aria-expanded", "false");
+});
+
+test("consumer cancellation stops row selection and expansion", async () => {
+  const item = toggles().treeitem.ensure("Toggle cancel");
+  await click(item);
+  expect(item).toHaveAttribute("aria-selected", "false");
+  expect(item).toHaveAttribute("aria-expanded", "false");
+});
+
+test("disabled folders ignore row toggles", async () => {
+  const item = toggles().treeitem.ensure("Toggle disabled");
+  await click(item);
+  expect(item).toHaveAttribute("aria-expanded", "false");
+  expect(item).not.toHaveAttribute("aria-selected");
+});
+
+test("leaves ignore both toggle options", async () => {
+  const item = toggles().treeitem.ensure("Toggle leaf");
+  await click(item);
+  expect(item).toHaveAttribute("aria-selected", "true");
+  expect(item).not.toHaveAttribute("aria-expanded");
+  await focus(item);
+  await press.Enter();
+  expect(item).not.toHaveAttribute("aria-expanded");
 });

@@ -8,6 +8,7 @@ import {
 } from "@ariakit/components/tree/utils";
 import { useStoreState } from "@ariakit/react-store";
 import {
+  useBooleanEvent,
   useEvent,
   useId,
   useWrapElement,
@@ -22,6 +23,7 @@ import {
   isSelfTarget,
   warnOnce,
 } from "@ariakit/utils";
+import type { BooleanOrCallback } from "@ariakit/utils";
 import type {
   CSSProperties,
   ElementType,
@@ -217,6 +219,8 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
     getItem: getItemProp,
     label,
     children: structuralChildren,
+    toggleOnClick = true,
+    toggleOnKeyPress = false,
     ...props
   }) {
     const context = useTreeScopedContext();
@@ -323,6 +327,9 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
       </>
     );
 
+    const toggleOnClickProp = useBooleanEvent(toggleOnClick);
+    const toggleOnKeyPressProp = useBooleanEvent(toggleOnKeyPress);
+
     const onKeyDownProp = props.onKeyDown;
 
     // Runs before Composite's generic movement. The consumer handler goes
@@ -340,13 +347,31 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
         action();
         return;
       }
+      if (
+        event.key === "Enter" &&
+        folder &&
+        !disabled &&
+        toggleOnKeyPressProp(event)
+      ) {
+        event.preventDefault();
+        store.toggle(id);
+        return;
+      }
       const selectionAction = getTreeSelectionAction(
         event,
         store,
         id,
         effectiveSelectable,
       );
-      if (!selectionAction) return;
+      if (!selectionAction) {
+        // Space is selection-only and must never expand. Without a selection
+        // action to prevent it, Command would synthesize a row click, and that
+        // click follows `toggleOnClick`.
+        if (event.key === " " && folder) {
+          event.preventDefault();
+        }
+        return;
+      }
       // Preventing default on Space also stops Command from synthesizing a
       // click, which would otherwise toggle the item a second time.
       event.preventDefault();
@@ -359,16 +384,23 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
       onClickProp?.(event);
       if (event.defaultPrevented) return;
       if (!id) return;
-      if (!effectiveSelectable) return;
-      const { selectionMode: mode, selectionAnchorId } = store.getState();
       // Never prevents default, so links, downloads, and modifier-click
-      // new-tab behavior keep working after the selection updates.
-      if (mode === "single") return store.select(id);
-      if (mode !== "multiple") return;
-      if (event.shiftKey) {
-        store.selectRange(selectionAnchorId ?? id, id);
-      } else {
-        store.toggleSelected(id);
+      // new-tab behavior keep working after the state updates.
+      if (effectiveSelectable) {
+        const { selectionMode: mode, selectionAnchorId } = store.getState();
+        if (mode === "single") {
+          store.select(id);
+        } else if (mode === "multiple") {
+          if (event.shiftKey) {
+            store.selectRange(selectionAnchorId ?? id, id);
+          } else {
+            store.toggleSelected(id);
+          }
+        }
+      }
+
+      if (folder && !disabled && toggleOnClickProp(event)) {
+        store.toggle(id);
       }
     });
 
@@ -487,6 +519,18 @@ export interface TreeItemOptions<
    * @default true
    */
   selectable?: boolean;
+  /**
+   * Whether clicking the row toggles the branch. Leaves and disabled items
+   * ignore it.
+   * @default true
+   */
+  toggleOnClick?: BooleanOrCallback<MouseEvent<HTMLType>>;
+  /**
+   * Whether pressing Enter on the row toggles the branch. Space is always
+   * selection-only.
+   * @default false
+   */
+  toggleOnKeyPress?: BooleanOrCallback<KeyboardEvent<HTMLType>>;
 }
 
 export type TreeItemProps<T extends ElementType = TagName> = Props<

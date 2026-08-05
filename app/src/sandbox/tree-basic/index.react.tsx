@@ -506,6 +506,105 @@ function ArrowBehavior() {
   );
 }
 
+function ToggleBehavior() {
+  const [events, setEvents] = useState<string[]>([]);
+  return (
+    <div>
+      <TreeProvider selectionMode="single">
+        <Tree aria-label="Toggle behavior">
+          <TreeItem id="toggle-default" label="Toggle default">
+            <TreeItem id="toggle-default-child" label="Toggle default child" />
+          </TreeItem>
+          <TreeItem
+            id="toggle-click-false"
+            label="Toggle click false"
+            toggleOnClick={false}
+          >
+            <TreeItem
+              id="toggle-click-false-child"
+              label="Toggle click false child"
+            />
+          </TreeItem>
+          <TreeItem
+            id="toggle-enter"
+            label="Toggle Enter"
+            toggleOnClick={false}
+            toggleOnKeyPress
+          >
+            <TreeItem id="toggle-enter-child" label="Toggle Enter child" />
+          </TreeItem>
+          <TreeItem
+            id="toggle-callback-false"
+            label="Toggle callback false"
+            toggleOnClick={() => false}
+          >
+            <TreeItem
+              id="toggle-callback-false-child"
+              label="Toggle callback false child"
+            />
+          </TreeItem>
+          <TreeItem
+            id="toggle-callback-true"
+            label="Toggle callback true"
+            onClick={(event) => {
+              // Read before the state updater runs: React nulls currentTarget
+              // once the event finishes dispatching.
+              const expanded =
+                event.currentTarget.getAttribute("aria-expanded");
+              setEvents((value) => [...value, `consumer:${expanded}`]);
+            }}
+            toggleOnClick={(event) => {
+              setEvents((value) => [...value, `click:${event.type}`]);
+              return true;
+            }}
+          >
+            <TreeItem
+              id="toggle-callback-true-child"
+              label="Toggle callback true child"
+            />
+          </TreeItem>
+          <TreeItem
+            id="toggle-key-callback"
+            label="Toggle key callback"
+            toggleOnClick={false}
+            toggleOnKeyPress={(event) => {
+              setEvents((value) => [...value, `key:${event.key}`]);
+              return true;
+            }}
+          >
+            <TreeItem
+              id="toggle-key-callback-child"
+              label="Toggle key callback child"
+            />
+          </TreeItem>
+          <TreeItem
+            id="toggle-cancel"
+            label="Toggle cancel"
+            onClick={(event) => event.preventDefault()}
+          >
+            <TreeItem id="toggle-cancel-child" label="Toggle cancel child" />
+          </TreeItem>
+          <TreeItem id="toggle-disabled" label="Toggle disabled" disabled>
+            <TreeItem
+              id="toggle-disabled-child"
+              label="Toggle disabled child"
+            />
+          </TreeItem>
+          <TreeItem
+            id="toggle-leaf"
+            label="Toggle leaf"
+            toggleOnClick
+            toggleOnKeyPress
+          />
+        </Tree>
+      </TreeProvider>
+      <div role="status" data-toggle-events>
+        {events.join(",")}
+      </div>
+    </div>
+  );
+}
+
 export default function Example() {
   return (
     <div>
@@ -523,6 +622,7 @@ export default function Example() {
       <CheckedOverrides />
       <Labels />
       <ArrowBehavior />
+      <ToggleBehavior />
       <TypedUsage />
       <Activation />
       <InvalidFolder />

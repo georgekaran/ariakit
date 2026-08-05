@@ -73,7 +73,9 @@ const items = createFileItems();
  * consumer's own item type, so `name` is known here without a cast.
  */
 function renderFileItem({ name, ...item }: TreeRendererItemProps<FileItem>) {
-  return <TreeItem key={item.id} {...item} label={name} />;
+  return (
+    <TreeItem key={item.id} {...item} label={name} toggleOnClick={false} />
+  );
 }
 
 function Status() {
@@ -119,7 +121,12 @@ function NestedDataTree() {
             itemSize={32}
           >
             {({ name, ...item }) => (
-              <TreeItem key={item.id} {...item} label={name} />
+              <TreeItem
+                key={item.id}
+                {...item}
+                label={name}
+                toggleOnClick={false}
+              />
             )}
           </TreeRenderer>
         </TreeProvider>
@@ -171,7 +178,12 @@ function ForcedVirtualFocusTree() {
           initialItems={6}
         >
           {({ name, ...item }) => (
-            <TreeItem key={item.id} {...item} label={name} />
+            <TreeItem
+              key={item.id}
+              {...item}
+              label={name}
+              toggleOnClick={false}
+            />
           )}
         </TreeRenderer>
       </div>
