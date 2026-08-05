@@ -324,49 +324,74 @@ export function createTreeStore(props: TreeStoreProps = {}): TreeStore {
     }),
   );
 
-  // When focus first enters, the first selected visible node wins over the
-  // first visible node. Composite already defaults `activeId` to the first
-  // enabled rendered item, so this only replaces that default, never a value
-  // the consumer or a move established.
+  // Entry focus and focus repair share one listener so their ordering is
+  // explicit: the entry-focus preference only ever replaces the default
+  // Composite picked, and repair then guarantees the active item is visible
+  // and enabled. The Tree layer updates `activeId` only; existing Composite
+  // code owns DOM focus, virtual `aria-activedescendant`, presentation, and
+  // replacement-node scrolling.
   setup(tree, () => {
-    let applied = false;
+    // The last known path of every id, so removal and reparenting can repair
+    // against the hierarchy as it was before the change.
+    const paths = new Map<string, readonly string[]>();
+    let previousItems: readonly TreeStoreItem[] = [];
+    let entryFocusApplied = false;
+
     return sync(
       tree,
-      ["items", "renderedItems", "selectedIds", "expandedIds"],
+      ["expandedIds", "items", "renderedItems", "selectedIds"],
       () => {
-        if (applied) return;
         // Read the complete state: the listener only receives the keys it
         // subscribes to, and this needs `moves` and `activeId` as well.
         const state = tree.getState();
-        if (state.moves) {
-          applied = true;
-          return;
-        }
+        const completeItems = getTreeSourceItems(state);
         const visibleItems = getVisibleTreeItems(
-          getTreeSourceItems(state),
+          completeItems,
           state.expandedIds,
         );
-        if (!visibleItems.length) return;
-        const compositeDefaultId = findFirstEnabledItem([
-          ...state.renderedItems,
-        ])?.id;
-        if (
-          state.activeId !== undefined &&
-          state.activeId !== compositeDefaultId
-        ) {
-          applied = true;
-          return;
+
+        if (!entryFocusApplied && visibleItems.length) {
+          const compositeDefaultId = findFirstEnabledItem([
+            ...state.renderedItems,
+          ])?.id;
+          if (
+            state.moves ||
+            (state.activeId !== undefined &&
+              state.activeId !== compositeDefaultId)
+          ) {
+            // The consumer or a move already chose an item.
+            entryFocusApplied = true;
+          } else {
+            // A selected node under a collapsed ancestor stays selected but is
+            // not an entry-focus target.
+            const selected = visibleItems.find(
+              (item) => !item.disabled && state.selectedIds.includes(item.id),
+            );
+            const entryId =
+              selected?.id ?? findFirstEnabledItem([...visibleItems])?.id;
+            if (entryId !== undefined) {
+              tree.setState("activeId", entryId);
+              entryFocusApplied = true;
+            }
+          }
         }
-        // A selected node under a collapsed ancestor stays selected but is not
-        // an entry-focus target.
-        const selected = visibleItems.find(
-          (item) => !item.disabled && state.selectedIds.includes(item.id),
-        );
-        const entryId =
-          selected?.id ?? findFirstEnabledItem([...visibleItems])?.id;
-        if (entryId === undefined) return;
-        tree.setState("activeId", entryId);
-        applied = true;
+
+        const { activeId } = tree.getState();
+        if (!isVisibleEnabledId(visibleItems, activeId)) {
+          const activePath =
+            completeItems.find((item) => item.id === activeId)?.folderPath ??
+            paths.get(activeId ?? "") ??
+            [];
+          tree.setState(
+            "activeId",
+            getRepairId(visibleItems, activePath, activeId, previousItems),
+          );
+        }
+
+        for (const item of completeItems) {
+          paths.set(item.id, item.folderPath);
+        }
+        previousItems = completeItems;
       },
     );
   });
@@ -393,6 +418,12 @@ export function createTreeStore(props: TreeStoreProps = {}): TreeStore {
         previousKnownIds = currentKnownIds;
         if (!removedIds.length) return;
         const removed = new Set(removedIds);
+        // Descendants of a deleted branch are themselves absent from the new
+        // collection, so filtering by removed ids covers them. A descendant
+        // that survives because it was reparented keeps its state.
+        tree.setState("expandedIds", (ids) =>
+          ids.filter((id) => !removed.has(id)),
+        );
         tree.setState("selectedIds", (ids) =>
           ids.filter((id) => !removed.has(id)),
         );

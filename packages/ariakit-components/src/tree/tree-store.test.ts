@@ -498,3 +498,101 @@ test("propagates selection to a connected store", () => {
   store.toggleSelected("package");
   expect(shared.getState().selectedIds).toEqual(["package"]);
 });
+
+test("repairs focus after expandedIds changes outside collapse", () => {
+  const store = createStore(["src", "tests"]);
+  store.setActiveId("button-test");
+  store.setExpandedIds([]);
+  expect(store.getState().activeId).toBe("src");
+});
+
+test("falls back when the collapsed ancestor is disabled", () => {
+  const withDisabled = items.map((item) =>
+    item.id === "src" ? { ...item, disabled: true } : item,
+  );
+  const store = createStoreWithItems(withDisabled, ["src", "tests"]);
+  store.setActiveId("button-test");
+  store.setExpandedIds([]);
+  expect(store.getState().activeId).toBe("package");
+});
+
+test("repairs focus when the active item is removed", () => {
+  const store = createStore(["src"]);
+  store.setActiveId("button");
+  const remaining = items.filter((item) => item.id !== "button");
+  store.setState("items", remaining);
+  store.setState("renderedItems", remaining);
+  // The deepest visible enabled ancestor of the removed item.
+  expect(store.getState().activeId).toBe("src");
+});
+
+test("repairs focus when an active branch and its descendants are removed", () => {
+  const store = createStore(["src", "tests"]);
+  store.setActiveId("button-test");
+  const remaining = items.filter(
+    (item) => !["src", "button", "tests", "button-test"].includes(item.id),
+  );
+  store.setState("items", remaining);
+  store.setState("renderedItems", remaining);
+  expect(store.getState().activeId).toBe("package");
+});
+
+test("keeps a still visible active item untouched", () => {
+  const store = createStore(["src"]);
+  store.setActiveId("package");
+  store.setExpandedIds([]);
+  expect(store.getState().activeId).toBe("package");
+});
+
+test("removes expanded ids that an explicit collection proves were deleted", () => {
+  const store = createStore(["src", "tests"]);
+  expect(store.getState().expandedIds).toEqual(["src", "tests"]);
+  const remaining = items.filter(
+    (item) => item.id !== "tests" && item.id !== "button-test",
+  );
+  store.setState("items", remaining);
+  expect(store.getState().expandedIds).toEqual(["src"]);
+});
+
+test("keeps expansion through registration-only unmounts", () => {
+  // No explicit items, so unregistration cannot be told apart from StrictMode
+  // or virtualization.
+  const store = createTreeStore();
+  onTestFinished(init(store));
+  store.setState("items", items);
+  store.setState("renderedItems", items);
+  store.setExpandedIds(["src", "tests"]);
+  const remaining = items.filter((item) => item.id !== "tests");
+  store.setState("items", remaining);
+  store.setState("renderedItems", remaining);
+  expect(store.getState().expandedIds).toEqual(["src", "tests"]);
+});
+
+test("reparenting an item preserves its selection and recalculates its level", () => {
+  const store = createSelectionStore({
+    selectionMode: "multiple",
+    defaultExpandedIds: ["src"],
+    defaultSelectedIds: ["button"],
+  });
+  const reparented = items.map((item) =>
+    item.id === "button" ? { ...item, folderPath: [] } : item,
+  );
+  store.setState("items", reparented);
+  store.setState("renderedItems", reparented);
+  expect(store.getState().selectedIds).toEqual(["button"]);
+  expect(store.item("button")?.folderPath).toEqual([]);
+});
+
+test("moves focus off an item that a reparent hides", () => {
+  const store = createStore(["src"]);
+  store.setActiveId("button");
+  // "button" moves under the collapsed "tests" branch, so it becomes hidden.
+  const reparented = items.map((item) =>
+    item.id === "button" ? { ...item, folderPath: ["src", "tests"] } : item,
+  );
+  store.setState("items", reparented);
+  store.setState("renderedItems", reparented);
+  // Repair lands on the deepest visible enabled ancestor of its new path,
+  // which is the collapsed branch itself rather than the root.
+  expect(store.getState().activeId).toBe("tests");
+});
