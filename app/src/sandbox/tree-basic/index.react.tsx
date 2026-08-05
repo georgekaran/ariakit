@@ -1,4 +1,10 @@
-import { Role, Tree, TreeItem, TreeProvider } from "@ariakit/react";
+import {
+  Role,
+  Tree,
+  TreeItem,
+  TreeItemArrow,
+  TreeProvider,
+} from "@ariakit/react";
 import { useTreeLevel } from "@ariakit/react-components/tree/tree-level";
 import { useTreeContext } from "@ariakit/react/tree";
 import type { ComponentProps, CSSProperties, ElementRef } from "react";
@@ -408,6 +414,98 @@ function Labels() {
   );
 }
 
+function ArrowBehavior() {
+  const [events, setEvents] = useState<string[]>([]);
+  return (
+    <div>
+      <TreeProvider selectionMode="single">
+        <Tree aria-label="Arrow behavior">
+          <TreeItem id="arrow-default" label="Arrow default folder">
+            <TreeItem id="arrow-default-child" label="Arrow default child" />
+          </TreeItem>
+          <TreeItem id="arrow-leaf" label="Arrow leaf" />
+          <TreeItem id="arrow-disabled" label="Arrow disabled folder" disabled>
+            <TreeItem id="arrow-disabled-child" label="Arrow disabled child" />
+          </TreeItem>
+          <TreeItem
+            id="arrow-custom"
+            label="Arrow custom folder"
+            render={(props) => (
+              <Role.div {...props}>
+                <TreeItemArrow data-custom-arrow />
+                {props.children}
+              </Role.div>
+            )}
+          >
+            <TreeItem id="arrow-custom-child" label="Arrow custom child" />
+          </TreeItem>
+          <TreeItem
+            id="arrow-callback"
+            label="Arrow callback folder"
+            render={(props) => (
+              <Role.div {...props}>
+                <TreeItemArrow
+                  data-callback-arrow
+                  onClick={() => setEvents((value) => [...value, "consumer"])}
+                  toggleOnClick={() => {
+                    setEvents((value) => [...value, "toggle"]);
+                    return true;
+                  }}
+                />
+                {props.children}
+              </Role.div>
+            )}
+          >
+            <TreeItem id="arrow-callback-child" label="Arrow callback child" />
+          </TreeItem>
+          <TreeItem
+            id="arrow-cancel"
+            label="Arrow cancel folder"
+            render={(props) => (
+              <Role.div {...props}>
+                <TreeItemArrow
+                  data-cancel-arrow
+                  onClick={(event) => event.preventDefault()}
+                />
+                {props.children}
+              </Role.div>
+            )}
+          >
+            <TreeItem id="arrow-cancel-child" label="Arrow cancel child" />
+          </TreeItem>
+          <TreeItem
+            id="arrow-false"
+            label="Arrow false folder"
+            render={(props) => (
+              <Role.div {...props}>
+                <TreeItemArrow data-false-arrow toggleOnClick={false} />
+                {props.children}
+              </Role.div>
+            )}
+          >
+            <TreeItem id="arrow-false-child" label="Arrow false child" />
+          </TreeItem>
+          <TreeItem
+            id="arrow-link"
+            label="Arrow link folder"
+            render={(props) => (
+              <Role.a {...props} href="#arrow-link-navigated">
+                <TreeItemArrow data-link-arrow />
+                {props.children}
+              </Role.a>
+            )}
+          >
+            <TreeItem id="arrow-link-child" label="Arrow link child" />
+          </TreeItem>
+        </Tree>
+      </TreeProvider>
+      <div role="status" data-arrow-events>
+        {events.join(",")}
+      </div>
+    </div>
+  );
+}
+
 export default function Example() {
   return (
     <div>
@@ -424,6 +522,7 @@ export default function Example() {
       <Overrides />
       <CheckedOverrides />
       <Labels />
+      <ArrowBehavior />
       <TypedUsage />
       <Activation />
       <InvalidFolder />

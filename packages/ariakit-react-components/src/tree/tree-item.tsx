@@ -34,9 +34,11 @@ import type { CompositeItemOptions } from "../composite/composite-item.tsx";
 import { useCompositeItem } from "../composite/composite-item.tsx";
 import {
   TreeFolderContext,
+  TreeItemContext,
   TreeLevelContext,
   useTreeScopedContext,
 } from "./tree-context.tsx";
+import { TreeItemArrow } from "./tree-item-arrow.tsx";
 import { useTreeLevel } from "./tree-level.tsx";
 import type { TreeStore } from "./tree-store.ts";
 
@@ -310,6 +312,17 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
     const useCheckedAttribute =
       effectiveSelectable && selectionAttribute === "checked";
 
+    // A consumer render owns the row's internals, so no arrow is injected.
+    const customRender = props.render;
+    const rowChildren = customRender ? (
+      label
+    ) : (
+      <>
+        <TreeItemArrow />
+        {label}
+      </>
+    );
+
     const onKeyDownProp = props.onKeyDown;
 
     // Runs before Composite's generic movement. The consumer handler goes
@@ -365,7 +378,7 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
 
     props = {
       role: "treeitem",
-      children: label,
+      children: rowChildren,
       // Explicit consumer hierarchy values win, including aria-setsize={-1}
       // for an unknown remote total.
       "aria-level": metadata?.level ?? folderPath.length + 1,
@@ -396,17 +409,24 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
     // Descendants render as following siblings of this row, never inside it, so
     // every treeitem stays a direct child of the tree. This runs after
     // `useCompositeItem` so Composite's item provider wraps the row alone.
+    const itemContext = useMemo(
+      () => ({ store, id, folder, expanded, disabled }),
+      [store, id, folder, expanded, disabled],
+    );
+
     props = useWrapElement(
       props,
       (element) => (
         <>
-          {element}
+          <TreeItemContext.Provider value={itemContext}>
+            {element}
+          </TreeItemContext.Provider>
           <TreeLevelContext.Provider value={descendantPath}>
             {structuralChildren}
           </TreeLevelContext.Provider>
         </>
       ),
-      [descendantPath, structuralChildren],
+      [itemContext, descendantPath, structuralChildren],
     );
 
     return props;

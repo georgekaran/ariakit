@@ -18,6 +18,14 @@ export {
   useTreeItem,
 } from "@ariakit/react-components/tree/tree-item";
 export type {
+  TreeItemArrowOptions,
+  TreeItemArrowProps,
+} from "@ariakit/react-components/tree/tree-item-arrow";
+export {
+  TreeItemArrow,
+  useTreeItemArrow,
+} from "@ariakit/react-components/tree/tree-item-arrow";
+export type {
   TreeLevelOptions,
   TreeLevelProps,
 } from "@ariakit/react-components/tree/tree-level";

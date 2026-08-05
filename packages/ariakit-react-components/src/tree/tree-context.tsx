@@ -34,6 +34,24 @@ export const TreeContextProvider = tree.ContextProvider;
 
 export const TreeScopedContextProvider = tree.ScopedContextProvider;
 
+export interface TreeItemContextValue {
+  store: TreeStore;
+  /** Undefined only in the render before a generated id settles. */
+  id: string | undefined;
+  folder: boolean;
+  expanded: boolean;
+  disabled: boolean;
+}
+
+/**
+ * The current row, so `TreeItemArrow` can read its state without prop
+ * drilling. Exported for sibling source modules only; it is not part of the
+ * public surface.
+ */
+export const TreeItemContext = createContext<TreeItemContextValue | undefined>(
+  undefined,
+);
+
 interface TreeFolderContextValue {
   id: string;
 }

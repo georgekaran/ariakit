@@ -365,7 +365,10 @@ test("never lands on a collapsed descendant with page keys", async () => {
 test("activates through command semantics with Enter", async () => {
   await focus(act().treeitem.ensure("Act src"));
   await press.Enter();
-  expect(q.status.ensure()).toHaveTextContent("act-src");
+  const activationStatus = q.status
+    .all()
+    .find((element) => !element.hasAttribute("data-arrow-events"));
+  expect(activationStatus).toHaveTextContent("act-src");
 });
 
 test("does not change tree state on Space in a non-selectable tree", async () => {
@@ -593,4 +596,101 @@ test("exposes zero-based hook and CSS levels with one-based ARIA", () => {
   const override = tree.treeitem.ensure("Level style override");
   expect(override.style.getPropertyValue("--level")).toBe("99");
   expect(override).toHaveAttribute("aria-level", "1");
+});
+
+function arrowItem(name: string) {
+  return q.within(q.tree.ensure("Arrow behavior")).treeitem.ensure.hidden(name);
+}
+
+function arrow(name: string) {
+  const element = arrowItem(name).querySelector("svg")?.parentElement;
+  expect(element).toBeInTheDocument();
+  return element!;
+}
+
+test("renders one inaccessible automatic arrow without render", () => {
+  const item = arrowItem("Arrow default folder");
+  expect(item.querySelectorAll("svg")).toHaveLength(1);
+  const element = arrow("Arrow default folder");
+  expect(element).toHaveAttribute("aria-hidden", "true");
+  expect(element).not.toHaveAttribute("tabindex");
+  expect(element.querySelector("polyline")).toHaveAttribute(
+    "points",
+    "6,4 10,8 6,12",
+  );
+});
+
+test("keeps a hidden equal-size arrow slot on leaves", () => {
+  const element = arrow("Arrow leaf");
+  expect(element.style.width).toBe("1em");
+  expect(element.style.height).toBe("1em");
+  expect(element.style.visibility).toBe("hidden");
+});
+
+test("keeps a leaf arrow inert", async () => {
+  const item = arrowItem("Arrow leaf");
+  await click(arrow("Arrow leaf"));
+  expect(item).not.toHaveAttribute("aria-expanded");
+  expect(item).toHaveAttribute("aria-selected", "false");
+});
+
+test("omits the automatic arrow when render supplies one", () => {
+  const item = arrowItem("Arrow custom folder");
+  expect(item.querySelectorAll("svg")).toHaveLength(1);
+  expect(item.querySelector("[data-custom-arrow]")).toBeInTheDocument();
+});
+
+test("omits the automatic arrow for both render forms", () => {
+  const labels = q.within(q.tree.ensure("Labels"));
+  expect(
+    labels.treeitem.ensure("Callback label").querySelectorAll("svg"),
+  ).toHaveLength(0);
+  expect(
+    labels.treeitem.ensure("Element label").querySelectorAll("svg"),
+  ).toHaveLength(0);
+});
+
+test("toggles from the arrow without selecting the row", async () => {
+  const item = arrowItem("Arrow default folder");
+  await click(arrow("Arrow default folder"));
+  expect(item).toHaveAttribute("aria-expanded", "true");
+  expect(item).toHaveAttribute("aria-selected", "false");
+  expect(
+    arrow("Arrow default folder").querySelector("polyline"),
+  ).toHaveAttribute("points", "4,6 8,10 12,6");
+});
+
+test("runs arrow consumer logic before its toggle callback", async () => {
+  await click(document.querySelector<HTMLElement>("[data-callback-arrow]"));
+  expect(document.querySelector("[data-arrow-events]")).toHaveTextContent(
+    "consumer,toggle",
+  );
+  expect(arrowItem("Arrow callback folder")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+});
+
+test("lets an arrow consumer cancel toggling", async () => {
+  await click(document.querySelector<HTMLElement>("[data-cancel-arrow]"));
+  expect(arrowItem("Arrow cancel folder")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+});
+
+test("respects toggleOnClick false on an explicit arrow", async () => {
+  await click(document.querySelector<HTMLElement>("[data-false-arrow]"));
+  expect(arrowItem("Arrow false folder")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+});
+
+test("does not toggle a disabled folder from its arrow", async () => {
+  await click(arrow("Arrow disabled folder"));
+  expect(arrowItem("Arrow disabled folder")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
 });

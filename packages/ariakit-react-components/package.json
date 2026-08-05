@@ -282,6 +282,8 @@
     "./tree/tree-context": "./src/tree/tree-context.tsx",
     "./tree/tree-folder": "./src/tree/tree-folder.tsx",
     "./tree/tree-item": "./src/tree/tree-item.tsx",
+    "./tree/tree-item-arrow": "./src/tree/tree-item-arrow.tsx",
+    "./tree/tree-item-arrow": "./src/tree/tree-item-arrow.tsx",
     "./tree/tree-level": "./src/tree/tree-level.tsx",
     "./tree/tree-provider": "./src/tree/tree-provider.tsx",
     "./tree/tree-renderer": "./src/tree/tree-renderer.tsx",
