@@ -65,12 +65,14 @@
 }
 
 /*
- * A real scroll viewport for the virtualized case. Without one the renderer
- * reserves the full height of all twenty rows and leaves a large gap between
- * the mounted window and the last item.
+ * The scroll viewport for the virtualized case is an ancestor of the tree, not
+ * the tree itself. The renderer resolves its scroller from the first ancestor
+ * that already overflows, and a tree that has not rendered its rows yet does
+ * not, so making the tree its own scroller leaves the window frozen at its
+ * initial range.
  */
-.virtualized-tree {
-  max-height: 11rem;
+.virtualized-viewport {
+  height: 11rem;
   overflow: auto;
   overscroll-behavior: contain;
 }

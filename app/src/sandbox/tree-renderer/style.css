@@ -1,0 +1,19 @@
+/*
+ * A real scroll viewport, so the renderer keeps a genuine window and the
+ * browser tests actually navigate onto rows that are not mounted yet. Without
+ * a height constraint the renderer expands to cover every visible node and no
+ * window boundary is ever crossed.
+ */
+.windowed-viewport {
+  height: 10rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+[role="treeitem"] {
+  padding: 0.25rem 0.5rem;
+}
+
+[role="treeitem"][data-active-item] {
+  background: hsl(204 100% 92%);
+}

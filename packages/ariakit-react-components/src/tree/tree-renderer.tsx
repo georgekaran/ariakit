@@ -6,6 +6,7 @@ import {
 import { useStoreState } from "@ariakit/react-store";
 import { createElement, forwardRef } from "@ariakit/react-utils";
 import type { Props } from "@ariakit/react-utils";
+import { omit } from "@ariakit/store";
 import { warnOnce } from "@ariakit/utils";
 import type { ElementType, ReactNode } from "react";
 import { useMemo } from "react";
@@ -60,7 +61,26 @@ export function useTreeRenderer<T extends ItemObject = ItemObject>({
   ...props
 }: TreeRendererProps<T>) {
   const context = useTreeProviderContext();
-  const store = useTreeStore({ store: storeProp || context });
+  const parentStore = storeProp || context;
+
+  // `virtualFocus` is held independently of the surrounding store, following
+  // the same approach Tab uses for the keys it must own. A controlled value
+  // re-asserts itself whenever the key changes, so two controlled writers on
+  // one key would overwrite each other forever.
+  const independentStore = useMemo(() => {
+    if (!parentStore) return parentStore;
+    return omit<TreeStore, ["virtualFocus"]>(parentStore, ["virtualFocus"]);
+  }, [parentStore]);
+
+  // Virtual focus is not optional here. Roving DOM focus cannot survive a
+  // virtualization window: moving onto a row that is not mounted yet leaves
+  // focus behind on the last mounted row, so a screen reader announces
+  // nothing. Tracking the active item with `aria-activedescendant` needs no
+  // element at the moment of the move, so it crosses the window correctly.
+  const store = useTreeStore({
+    store: independentStore,
+    virtualFocus: true,
+  });
 
   const expandedIds = useStoreState(store, "expandedIds");
 
@@ -106,8 +126,9 @@ export function useTreeRenderer<T extends ItemObject = ItemObject>({
   } as unknown as CompositeRendererProps<T>);
 
   // The Tree and the renderer are the same element, so no generic accessible
-  // container is ever inserted between the tree and its items.
-  return useTree({ ...rendererProps, store });
+  // container is ever inserted between the tree and its items. `virtualFocus`
+  // goes last so a surrounding provider cannot turn it back off.
+  return useTree({ ...rendererProps, store, virtualFocus: true });
 }
 
 /**
@@ -148,7 +169,9 @@ export interface TreeRendererOptions<T extends ItemObject = ItemObject>
       CompositeRendererOptions<T>,
       "store" | "children" | "items" | "orientation"
     >,
-    Omit<TreeOptions, "store" | "children"> {
+    // `virtualFocus` is enforced rather than configurable: see the note in
+    // `useTreeRenderer`.
+    Omit<TreeOptions, "store" | "children" | "virtualFocus"> {
   /**
    * Object returned by the
    * [`useTreeStore`](https://ariakit.com/reference/use-tree-store) hook. If not

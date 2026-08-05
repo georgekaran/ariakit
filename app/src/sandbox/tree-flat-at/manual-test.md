@@ -298,40 +298,45 @@ For each row, write `Pass`, `Fail: <what was actually spoken>`, or
 screenshot the caption panel text for anything that fails - the exact spoken
 string is the useful evidence.
 
-## Known defect: roving focus across a virtualization window
+## Resolved: focus across a virtualization window
 
-Found while preparing this fixture, reproduced in Chrome with real key presses.
+While preparing this fixture, arrowing past the mounted window left DOM focus
+behind on the last mounted row, so a screen reader announced nothing.
 
-**Symptom.** In case 9 ("Production virtualized"), arrowing down stops at the
-last mounted row. The next row mounts and the container scrolls, but DOM focus
-stays behind, so a screen reader announces nothing. Case 10 is the same data
-with `virtualFocus` and behaves correctly, reaching `w-file-6` through
-`aria-activedescendant`.
+**Cause.** `presentItem` in `composite/utils.ts` parks a focus request until the
+target item renders and re-checks it only when `activeId`, `items`, `mounted`,
+`open`, or `unstable_placing` change. A virtualized Tree passes the complete
+dataset as a controlled `items` prop, so mounting a new window row changes
+`renderedItems` and never `items`, and the parked request was never woken.
 
-**Reproduction.**
+**Resolution.** `TreeRenderer` now always uses virtual focus. Tracking the
+active item with `aria-activedescendant` needs no element at the moment of the
+move, so it crosses the window correctly. This is enforced rather than
+recommended: `virtualFocus` is not part of `TreeRendererOptions`, and the
+renderer holds the key independently of the surrounding store, so a
+`TreeProvider` passing `virtualFocus={false}` cannot turn it back off. Shared
+Composite code was not modified, and an ordinary `Tree` keeps roving focus.
 
-1. Focus `W root` in case 9.
-2. Press `ArrowDown` seven times.
-3. Focus stalls on `W file 5` while `W file 6` is present in the DOM.
+Covered by `tree-renderer/test-browser.ts`: DOM focus stays on the host, the
+active descendant crosses a real window, the target row mounts with
+`data-active-item`, every item stays at `tabindex="-1"`, a provider asking for
+roving focus is ignored, and an ordinary Tree still moves DOM focus.
 
-**Cause.** `presentItem` in
-`packages/ariakit-react-components/src/composite/utils.ts` parks a focus request
-until the target item renders, and re-checks it only when `activeId`, `items`,
-`mounted`, `open`, or `unstable_placing` change. `TreeRenderer` passes the
-complete dataset as a controlled `items` prop, so mounting a new window row
-changes `renderedItems`, never `items`, and the parked request is never woken.
+**A second, separate issue found the same way.** Giving the tree itself
+`overflow: auto` froze the mounted window at its initial range: the renderer
+resolves its scroller from the first ancestor that already overflows, and a tree
+that has not rendered its rows yet does not qualify, so it fell back to the
+document and never observed the tree's own scrolling. Only the active row stayed
+alive, as a persistent index. The scroll viewport is now an ancestor of the
+tree, which is the supported arrangement, and a browser test asserts that a
+contiguous band of rows stays mounted around the active item.
 
-**Scope.** This lives in shared Composite presentation code and needs the
-combination of roving DOM focus, a controlled `items` collection, and a real
-scroll viewport. Ariakit's own virtualized components use `virtualFocus`, which
-is why it has not surfaced before. Tree is the first roving-focus virtualized
-composite.
-
-**Consequence for this gate.** Assess case 9 for roving focus and case 10 for
-virtual focus separately, and record case 9 as `Fail` for keyboard navigation
-past the mounted window until this is resolved. The hierarchy values themselves
-(level, position, complete set size) are correct in both cases and can still be
-assessed in case 9.
+**What this means for case 9.** It is the single supported virtualized
+configuration and uses virtual focus. Assess it as a virtual-focus case: the
+active item should be announced as the active descendant while the tree itself
+holds focus. If a required screen reader and browser combination fails to track
+the active descendant here, the shared `presentItem` fix becomes necessary and
+should be raised before release.
 
 ## Results log
 
