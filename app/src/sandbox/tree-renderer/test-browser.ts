@@ -1,7 +1,11 @@
 import { withFramework } from "#app/test-utils/preview.ts";
 
 withFramework(import.meta.dirname, async ({ query, test }) => {
-  test("mounts, scrolls to, and focuses an item that starts off window", async ({
+  // NOTE: this tree has no scroll viewport, so the renderer expands its window
+  // to cover every visible node and nothing here crosses a window boundary.
+  // Navigating onto a genuinely unmounted row is a known open defect, recorded
+  // in tree-flat-at/manual-test.md under "Known defect".
+  test("navigates the visible projection across the whole tree", async ({
     page,
     q,
   }) => {

@@ -337,6 +337,34 @@ const virtualItems: VirtualItem[] = [
   })),
 ];
 
+/**
+ * The same data with virtual focus. Ariakit's own virtualized components use
+ * this mode, so it is the comparison case for the roving-focus one above.
+ */
+function VirtualizedVirtualFocusTree() {
+  return (
+    <TreeProvider
+      items={virtualItems}
+      defaultExpandedIds={["w-root"]}
+      virtualFocus
+    >
+      <TreeRenderer
+        aria-label="Production virtualized virtual focus"
+        className="virtualized-tree"
+        items={virtualItems}
+        itemSize={32}
+        initialItems={6}
+      >
+        {({ name, ...item }) => (
+          <TreeItem key={item.id} {...item}>
+            {name}
+          </TreeItem>
+        )}
+      </TreeRenderer>
+    </TreeProvider>
+  );
+}
+
 function VirtualizedTree() {
   return (
     <TreeProvider items={virtualItems} defaultExpandedIds={["w-root"]}>
@@ -432,6 +460,12 @@ export default function Example() {
         note="Twenty siblings in the data, only a window mounted in the DOM."
       >
         <VirtualizedTree />
+      </Case>
+      <Case
+        title="10. Production virtualized (virtual focus)"
+        note="Same data, aria-activedescendant instead of roving DOM focus."
+      >
+        <VirtualizedVirtualFocusTree />
       </Case>
     </div>
   );

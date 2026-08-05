@@ -298,6 +298,41 @@ For each row, write `Pass`, `Fail: <what was actually spoken>`, or
 screenshot the caption panel text for anything that fails - the exact spoken
 string is the useful evidence.
 
+## Known defect: roving focus across a virtualization window
+
+Found while preparing this fixture, reproduced in Chrome with real key presses.
+
+**Symptom.** In case 9 ("Production virtualized"), arrowing down stops at the
+last mounted row. The next row mounts and the container scrolls, but DOM focus
+stays behind, so a screen reader announces nothing. Case 10 is the same data
+with `virtualFocus` and behaves correctly, reaching `w-file-6` through
+`aria-activedescendant`.
+
+**Reproduction.**
+
+1. Focus `W root` in case 9.
+2. Press `ArrowDown` seven times.
+3. Focus stalls on `W file 5` while `W file 6` is present in the DOM.
+
+**Cause.** `presentItem` in
+`packages/ariakit-react-components/src/composite/utils.ts` parks a focus request
+until the target item renders, and re-checks it only when `activeId`, `items`,
+`mounted`, `open`, or `unstable_placing` change. `TreeRenderer` passes the
+complete dataset as a controlled `items` prop, so mounting a new window row
+changes `renderedItems`, never `items`, and the parked request is never woken.
+
+**Scope.** This lives in shared Composite presentation code and needs the
+combination of roving DOM focus, a controlled `items` collection, and a real
+scroll viewport. Ariakit's own virtualized components use `virtualFocus`, which
+is why it has not surfaced before. Tree is the first roving-focus virtualized
+composite.
+
+**Consequence for this gate.** Assess case 9 for roving focus and case 10 for
+virtual focus separately, and record case 9 as `Fail` for keyboard navigation
+past the mounted window until this is resolved. The hierarchy values themselves
+(level, position, complete set size) are correct in both cases and can still be
+assessed in case 9.
+
 ## Results log
 
 Record the date, tester, screen reader version, browser version, and OS for
