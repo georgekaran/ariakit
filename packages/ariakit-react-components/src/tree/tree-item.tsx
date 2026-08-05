@@ -10,10 +10,14 @@ import {
 import type { Props } from "@ariakit/react-utils";
 import { disabledFromProps, invariant } from "@ariakit/utils";
 import type { ElementType } from "react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useContext, useMemo } from "react";
 import type { CompositeItemOptions } from "../composite/composite-item.tsx";
 import { useCompositeItem } from "../composite/composite-item.tsx";
-import { useTreeScopedContext } from "./tree-context.tsx";
+import {
+  TreeFolderContext,
+  TreeLevelContext,
+  useTreeScopedContext,
+} from "./tree-context.tsx";
 import type { TreeStore } from "./tree-store.ts";
 
 const TagName = "div" satisfies ElementType;
@@ -49,15 +53,20 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
         "TreeItem must be wrapped in a Tree component.",
     );
 
-    const defaultId = useId();
-    const id = props.id || defaultId;
+    // Explicit props always win over the values inherited from the nested
+    // authoring providers.
+    const folderContext = useContext(TreeFolderContext);
+    const levelContext = useContext(TreeLevelContext);
 
-    const folder = folderProp ?? false;
+    const defaultId = useId();
+    const id = props.id || folderContext?.id || defaultId;
+
+    const folder = folderProp ?? !!folderContext;
 
     // A path supplied inline creates a new array on every render, which would
     // otherwise re-register the item in an endless loop. Comparing by content
     // keeps the registered metadata stable.
-    const suppliedPath = folderPathProp ?? EMPTY_PATH;
+    const suppliedPath = folderPathProp ?? levelContext ?? EMPTY_PATH;
     const folderPathKey = suppliedPath.join("");
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed by content
     const folderPath = useMemo(() => suppliedPath, [folderPathKey]);

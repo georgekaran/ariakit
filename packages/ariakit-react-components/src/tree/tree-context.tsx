@@ -1,4 +1,5 @@
 import { createStoreContext } from "@ariakit/react-utils";
+import { createContext } from "react";
 import {
   CompositeContextProvider,
   CompositeScopedContextProvider,
@@ -32,3 +33,22 @@ export const useTreeProviderContext = tree.useProviderContext;
 export const TreeContextProvider = tree.ContextProvider;
 
 export const TreeScopedContextProvider = tree.ScopedContextProvider;
+
+interface TreeFolderContextValue {
+  id: string;
+}
+
+/**
+ * Identifies the branch a directly nested `TreeItem` describes. This is an
+ * implementation context for the nested authoring sugar, not a public context
+ * hook. `TreeLevel` masks it so descendants do not become branches by accident.
+ */
+export const TreeFolderContext = createContext<TreeFolderContextValue | null>(
+  null,
+);
+
+/**
+ * The complete ancestor path inherited by every `TreeItem` inside a
+ * `TreeLevel`.
+ */
+export const TreeLevelContext = createContext<readonly string[]>([]);
