@@ -25,26 +25,21 @@ function FlatProjectFiles() {
   return (
     <TreeProvider defaultExpandedIds={["src"]} selectionMode="single">
       <Tree aria-label="Flat project files">
-        <TreeItem id="src" folder>
-          src
-        </TreeItem>
-        <TreeItem id="button" folderPath={["src"]}>
-          button.tsx
-        </TreeItem>
-        <TreeItem id="tests" folder folderPath={["src"]}>
-          tests
-        </TreeItem>
-        <TreeItem id="button-test" folderPath={["src", "tests"]}>
-          button.test.tsx
-        </TreeItem>
+        <TreeItem id="src" folder label="src" />
+        <TreeItem id="button" folderPath={["src"]} label="button.tsx" />
+        <TreeItem id="tests" folder folderPath={["src"]} label="tests" />
+        <TreeItem
+          id="button-test"
+          folderPath={["src", "tests"]}
+          label="button.test.tsx"
+        />
         <TreeItem
           id="package"
           ref={packageRef}
           className="package-item"
           data-kind="manifest"
-        >
-          package.json
-        </TreeItem>
+          label="package.json"
+        />
       </Tree>
     </TreeProvider>
   );
@@ -54,19 +49,15 @@ function SemiNestedProjectFiles() {
   return (
     <TreeProvider defaultExpandedIds={["semi-src"]} selectionMode="single">
       <Tree aria-label="Semi-nested project files">
-        <TreeItem id="semi-src" folder>
-          src
-        </TreeItem>
+        <TreeItem id="semi-src" folder label="src" />
         <TreeLevel folderPath={["semi-src"]}>
-          <TreeItem id="semi-button">button.tsx</TreeItem>
-          <TreeItem id="semi-tests" folder>
-            tests
-          </TreeItem>
+          <TreeItem id="semi-button" label="button.tsx" />
+          <TreeItem id="semi-tests" folder label="tests" />
           <TreeLevel folderPath={["semi-src", "semi-tests"]}>
-            <TreeItem id="semi-button-test">button.test.tsx</TreeItem>
+            <TreeItem id="semi-button-test" label="button.test.tsx" />
           </TreeLevel>
         </TreeLevel>
-        <TreeItem id="semi-package">package.json</TreeItem>
+        <TreeItem id="semi-package" label="package.json" />
       </Tree>
     </TreeProvider>
   );
@@ -77,18 +68,18 @@ function NestedProjectFiles() {
     <TreeProvider defaultExpandedIds={["nested-src"]} selectionMode="single">
       <Tree aria-label="Nested project files">
         <TreeFolder id="nested-src">
-          <TreeItem>src</TreeItem>
+          <TreeItem label="src" />
           <TreeLevel>
-            <TreeItem id="nested-button">button.tsx</TreeItem>
+            <TreeItem id="nested-button" label="button.tsx" />
             <TreeFolder id="nested-tests">
-              <TreeItem>tests</TreeItem>
+              <TreeItem label="tests" />
               <TreeLevel>
-                <TreeItem id="nested-button-test">button.test.tsx</TreeItem>
+                <TreeItem id="nested-button-test" label="button.test.tsx" />
               </TreeLevel>
             </TreeFolder>
           </TreeLevel>
         </TreeFolder>
-        <TreeItem id="nested-package">package.json</TreeItem>
+        <TreeItem id="nested-package" label="package.json" />
       </Tree>
     </TreeProvider>
   );
@@ -103,10 +94,10 @@ function GeneratedIds() {
     <TreeProvider>
       <Tree aria-label="Generated ids">
         <TreeFolder>
-          <TreeItem>Generated root</TreeItem>
+          <TreeItem label="Generated root" />
           <TreeLevel>
-            <TreeItem>Generated child</TreeItem>
-            <TreeItem folderPath={[]}>Generated override</TreeItem>
+            <TreeItem label="Generated child" />
+            <TreeItem folderPath={[]} label="Generated override" />
           </TreeLevel>
         </TreeFolder>
       </Tree>
@@ -123,25 +114,29 @@ function CheckedFiles() {
       defaultSelectedIds={["checked-button"]}
     >
       <Tree aria-label="Checked files">
-        <TreeItem id="checked-src" folder>
-          Checked src
-        </TreeItem>
-        <TreeItem id="checked-button" folderPath={["checked-src"]}>
-          Checked button.tsx
-        </TreeItem>
+        <TreeItem id="checked-src" folder label="Checked src" />
+        <TreeItem
+          id="checked-button"
+          folderPath={["checked-src"]}
+          label="Checked button.tsx"
+        />
         <TreeItem
           id="checked-readonly"
           folderPath={["checked-src"]}
           selectable={false}
-        >
-          Checked readonly.txt
-        </TreeItem>
-        <TreeItem id="checked-disabled" folderPath={["checked-src"]} disabled>
-          Checked disabled.txt
-        </TreeItem>
-        <TreeItem id="checked-link" render={<a href="#checked" />}>
-          Checked link
-        </TreeItem>
+          label="Checked readonly.txt"
+        />
+        <TreeItem
+          id="checked-disabled"
+          folderPath={["checked-src"]}
+          disabled
+          label="Checked disabled.txt"
+        />
+        <TreeItem
+          id="checked-link"
+          render={<a href="#checked" />}
+          label="Checked link"
+        />
       </Tree>
     </TreeProvider>
   );
@@ -155,16 +150,10 @@ function HorizontalFiles() {
   return (
     <TreeProvider defaultExpandedIds={["h-src"]}>
       <Tree aria-label="Horizontal files" orientation="horizontal">
-        <TreeItem id="h-src" folder>
-          H src
-        </TreeItem>
-        <TreeItem id="h-button" folderPath={["h-src"]}>
-          H button
-        </TreeItem>
-        <TreeItem id="h-tests" folder folderPath={["h-src"]}>
-          H tests
-        </TreeItem>
-        <TreeItem id="h-package">H package</TreeItem>
+        <TreeItem id="h-src" folder label="H src" />
+        <TreeItem id="h-button" folderPath={["h-src"]} label="H button" />
+        <TreeItem id="h-tests" folder folderPath={["h-src"]} label="H tests" />
+        <TreeItem id="h-package" label="H package" />
       </Tree>
     </TreeProvider>
   );
@@ -175,16 +164,15 @@ function RtlFiles() {
   return (
     <TreeProvider defaultExpandedIds={["rtl-src"]}>
       <Tree aria-label="RTL files" rtl>
-        <TreeItem id="rtl-src" folder>
-          R src
-        </TreeItem>
-        <TreeItem id="rtl-button" folderPath={["rtl-src"]}>
-          R button
-        </TreeItem>
-        <TreeItem id="rtl-tests" folder folderPath={["rtl-src"]}>
-          R tests
-        </TreeItem>
-        <TreeItem id="rtl-package">R package</TreeItem>
+        <TreeItem id="rtl-src" folder label="R src" />
+        <TreeItem id="rtl-button" folderPath={["rtl-src"]} label="R button" />
+        <TreeItem
+          id="rtl-tests"
+          folder
+          folderPath={["rtl-src"]}
+          label="R tests"
+        />
+        <TreeItem id="rtl-package" label="R package" />
       </Tree>
     </TreeProvider>
   );
@@ -195,9 +183,9 @@ function HorizontalRtlFiles() {
   return (
     <TreeProvider>
       <Tree aria-label="Horizontal RTL files" orientation="horizontal" rtl>
-        <TreeItem id="hr-one">HR one</TreeItem>
-        <TreeItem id="hr-two">HR two</TreeItem>
-        <TreeItem id="hr-three">HR three</TreeItem>
+        <TreeItem id="hr-one" label="HR one" />
+        <TreeItem id="hr-two" label="HR two" />
+        <TreeItem id="hr-three" label="HR three" />
       </Tree>
     </TreeProvider>
   );
@@ -213,28 +201,36 @@ function Overrides() {
     <TreeProvider defaultExpandedIds={["ov-src"]} selectionMode="single">
       <Tree aria-label="Overrides">
         {/* Says collapsed while the store says expanded. */}
-        <TreeItem id="ov-src" folder aria-expanded={false}>
-          Ov src
-        </TreeItem>
+        <TreeItem id="ov-src" folder aria-expanded={false} label="Ov src" />
         {/* A leaf may not acquire a branch state. */}
-        <TreeItem id="ov-leaf" folderPath={["ov-src"]} aria-expanded={true}>
-          Ov leaf
-        </TreeItem>
+        <TreeItem
+          id="ov-leaf"
+          folderPath={["ov-src"]}
+          aria-expanded={true}
+          label="Ov leaf"
+        />
         {/* Checked has no meaning while the tree uses aria-selected. */}
-        <TreeItem id="ov-mixed" folderPath={["ov-src"]} aria-checked="mixed">
-          Ov mixed
-        </TreeItem>
+        <TreeItem
+          id="ov-mixed"
+          folderPath={["ov-src"]}
+          aria-checked="mixed"
+          label="Ov mixed"
+        />
         {/* Explicit hierarchy values are author owned and must survive. */}
-        <TreeItem id="ov-remote" aria-posinset={9} aria-setsize={-1}>
-          Ov remote
-        </TreeItem>
+        <TreeItem
+          id="ov-remote"
+          aria-posinset={9}
+          aria-setsize={-1}
+          label="Ov remote"
+        />
         {/* A collapsed ancestor wins over hidden={false}. */}
-        <TreeItem id="ov-closed" folder>
-          Ov closed
-        </TreeItem>
-        <TreeItem id="ov-buried" folderPath={["ov-closed"]} hidden={false}>
-          Ov buried
-        </TreeItem>
+        <TreeItem id="ov-closed" folder label="Ov closed" />
+        <TreeItem
+          id="ov-buried"
+          folderPath={["ov-closed"]}
+          hidden={false}
+          label="Ov buried"
+        />
       </Tree>
     </TreeProvider>
   );
@@ -249,15 +245,19 @@ function CheckedOverrides() {
       selectionAttribute="checked"
     >
       <Tree aria-label="Checked overrides">
-        <TreeItem id="cm-src" folder>
-          Cm src
-        </TreeItem>
-        <TreeItem id="cm-mixed" folderPath={["cm-src"]} aria-checked="mixed">
-          Cm mixed
-        </TreeItem>
-        <TreeItem id="cm-plain" folderPath={["cm-src"]} aria-selected>
-          Cm plain
-        </TreeItem>
+        <TreeItem id="cm-src" folder label="Cm src" />
+        <TreeItem
+          id="cm-mixed"
+          folderPath={["cm-src"]}
+          aria-checked="mixed"
+          label="Cm mixed"
+        />
+        <TreeItem
+          id="cm-plain"
+          folderPath={["cm-src"]}
+          aria-selected
+          label="Cm plain"
+        />
       </Tree>
     </TreeProvider>
   );
@@ -277,19 +277,15 @@ function Activation() {
             id="act-src"
             folder
             onClick={() => setLog((entries) => [...entries, "act-src"])}
-          >
-            Act src
-          </TreeItem>
-          <TreeItem id="act-child" folderPath={["act-src"]}>
-            Act child
-          </TreeItem>
+            label="Act src"
+          />
+          <TreeItem id="act-child" folderPath={["act-src"]} label="Act child" />
           <TreeItem
             id="act-blocked"
             folder
             onKeyDown={(event) => event.preventDefault()}
-          >
-            Act blocked
-          </TreeItem>
+            label="Act blocked"
+          />
         </Tree>
       </TreeProvider>
       <div role="status">{log.join(",")}</div>
@@ -312,7 +308,7 @@ function InvalidLevel() {
         <TreeProvider>
           <Tree aria-label="Invalid level">
             <TreeLevel>
-              <TreeItem id="invalid-item">Invalid item</TreeItem>
+              <TreeItem id="invalid-item" label="Invalid item" />
             </TreeLevel>
           </Tree>
         </TreeProvider>
@@ -336,15 +332,13 @@ function TypedUsage() {
   const itemProps: ComponentProps<typeof TreeItem> = {
     id: "typed-a",
     folder: true,
-    children: "Typed a",
+    label: "Typed a",
   };
   return (
     <TreeProvider defaultExpandedIds={["typed-a"]}>
       <Tree ref={treeRef} aria-label="Typed usage">
         <TreeItem {...itemProps} />
-        <TreeItem id="typed-b" folderPath={["typed-a"]}>
-          Typed b
-        </TreeItem>
+        <TreeItem id="typed-b" folderPath={["typed-a"]} label="Typed b" />
       </Tree>
       <SubpathContextProbe />
     </TreeProvider>

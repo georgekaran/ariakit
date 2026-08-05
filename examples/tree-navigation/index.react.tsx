@@ -41,9 +41,8 @@ export default function Example() {
                 aria-current={page === item.id ? "page" : undefined}
                 render={<a href={`#${item.id}`} />}
                 onClick={navigate(item.id)}
-              >
-                {item.name}
-              </Ariakit.TreeItem>
+                label={item.name}
+              />
             ))}
           </Ariakit.Tree>
         </Ariakit.TreeProvider>

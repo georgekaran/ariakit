@@ -10,19 +10,16 @@ export function SsrTree() {
   return (
     <TreeProvider defaultExpandedIds={["tests"]}>
       <Tree aria-label="SSR files">
-        <TreeItem id="src" folder>
-          src
-        </TreeItem>
-        <TreeItem id="tests" folder folderPath={["src"]}>
-          tests
-        </TreeItem>
-        <TreeItem id="test" folderPath={["src", "tests"]}>
-          test.ts
-        </TreeItem>
-        <TreeItem id="readme">readme.md</TreeItem>
-        <TreeItem id="remote" aria-posinset={7} aria-setsize={-1}>
-          remote.md
-        </TreeItem>
+        <TreeItem id="src" folder label="src" />
+        <TreeItem id="tests" folder folderPath={["src"]} label="tests" />
+        <TreeItem id="test" folderPath={["src", "tests"]} label="test.ts" />
+        <TreeItem id="readme" label="readme.md" />
+        <TreeItem
+          id="remote"
+          aria-posinset={7}
+          aria-setsize={-1}
+          label="remote.md"
+        />
       </Tree>
     </TreeProvider>
   );
@@ -38,15 +35,9 @@ export function SsrCheckedTree() {
       defaultSelectedIds={["c-a"]}
     >
       <Tree aria-label="SSR checked" orientation="horizontal">
-        <TreeItem id="c-src" folder>
-          C src
-        </TreeItem>
-        <TreeItem id="c-a" folderPath={["c-src"]}>
-          C a
-        </TreeItem>
-        <TreeItem id="c-b" folderPath={["c-src"]}>
-          C b
-        </TreeItem>
+        <TreeItem id="c-src" folder label="C src" />
+        <TreeItem id="c-a" folderPath={["c-src"]} label="C a" />
+        <TreeItem id="c-b" folderPath={["c-src"]} label="C b" />
       </Tree>
     </TreeProvider>
   );
@@ -83,9 +74,7 @@ export function SsrRendererTree() {
         initialItems={4}
       >
         {({ name, ...item }) => (
-          <TreeItem key={item.id} {...item}>
-            {name}
-          </TreeItem>
+          <TreeItem key={item.id} {...item} label={name} />
         )}
       </TreeRenderer>
     </TreeProvider>

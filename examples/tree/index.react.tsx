@@ -43,25 +43,27 @@ export default function Example() {
               components
             </Ariakit.TreeItem>
             <Ariakit.TreeLevel>
-              <Ariakit.TreeItem id="button" className="tree-item">
-                button.tsx
-              </Ariakit.TreeItem>
-              <Ariakit.TreeItem id="dialog" className="tree-item">
-                dialog.tsx
-              </Ariakit.TreeItem>
+              <Ariakit.TreeItem
+                id="button"
+                className="tree-item"
+                label="button.tsx"
+              />
+              <Ariakit.TreeItem
+                id="dialog"
+                className="tree-item"
+                label="dialog.tsx"
+              />
             </Ariakit.TreeLevel>
           </Ariakit.TreeFolder>
-          <Ariakit.TreeItem id="index" className="tree-item">
-            index.ts
-          </Ariakit.TreeItem>
+          <Ariakit.TreeItem id="index" className="tree-item" label="index.ts" />
         </Ariakit.TreeLevel>
       </Ariakit.TreeFolder>
-      <Ariakit.TreeItem id="package" className="tree-item">
-        package.json
-      </Ariakit.TreeItem>
-      <Ariakit.TreeItem id="readme" className="tree-item">
-        readme.md
-      </Ariakit.TreeItem>
+      <Ariakit.TreeItem
+        id="package"
+        className="tree-item"
+        label="package.json"
+      />
+      <Ariakit.TreeItem id="readme" className="tree-item" label="readme.md" />
     </Ariakit.Tree>
   );
 }

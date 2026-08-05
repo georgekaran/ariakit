@@ -7,27 +7,23 @@ function NavigationTree() {
   return (
     <TreeProvider defaultExpandedIds={["nav-docs"]}>
       <Tree aria-label="Navigation">
-        <TreeItem id="nav-docs" folder>
-          Nav docs
-        </TreeItem>
+        <TreeItem id="nav-docs" folder label="Nav docs" />
         <TreeItem
           id="nav-guide"
           folderPath={["nav-docs"]}
           aria-current={page === "nav-guide" ? "page" : undefined}
           render={<a href="#nav-guide" />}
           onClick={() => setPage("nav-guide")}
-        >
-          Nav guide
-        </TreeItem>
+          label="Nav guide"
+        />
         <TreeItem
           id="nav-api"
           folderPath={["nav-docs"]}
           aria-current={page === "nav-api" ? "page" : undefined}
           render={<a href="#nav-api" />}
           onClick={() => setPage("nav-api")}
-        >
-          Nav api
-        </TreeItem>
+          label="Nav api"
+        />
       </Tree>
     </TreeProvider>
   );
@@ -42,16 +38,18 @@ function AutoSingleTree() {
       defaultSelectedIds={["auto-button"]}
     >
       <Tree aria-label="Auto single">
-        <TreeItem id="auto-src" folder>
-          Auto src
-        </TreeItem>
-        <TreeItem id="auto-button" folderPath={["auto-src"]}>
-          Auto button.tsx
-        </TreeItem>
-        <TreeItem id="auto-tests" folderPath={["auto-src"]}>
-          Auto tests
-        </TreeItem>
-        <TreeItem id="auto-package">Auto package.json</TreeItem>
+        <TreeItem id="auto-src" folder label="Auto src" />
+        <TreeItem
+          id="auto-button"
+          folderPath={["auto-src"]}
+          label="Auto button.tsx"
+        />
+        <TreeItem
+          id="auto-tests"
+          folderPath={["auto-src"]}
+          label="Auto tests"
+        />
+        <TreeItem id="auto-package" label="Auto package.json" />
       </Tree>
     </TreeProvider>
   );
@@ -66,15 +64,17 @@ function ManualSingleTree() {
       selectOnMove={false}
     >
       <Tree aria-label="Manual single">
-        <TreeItem id="manual-src" folder>
-          Manual src
-        </TreeItem>
-        <TreeItem id="manual-button" folderPath={["manual-src"]}>
-          Manual button.tsx
-        </TreeItem>
-        <TreeItem id="manual-tests" folderPath={["manual-src"]}>
-          Manual tests
-        </TreeItem>
+        <TreeItem id="manual-src" folder label="Manual src" />
+        <TreeItem
+          id="manual-button"
+          folderPath={["manual-src"]}
+          label="Manual button.tsx"
+        />
+        <TreeItem
+          id="manual-tests"
+          folderPath={["manual-src"]}
+          label="Manual tests"
+        />
       </Tree>
     </TreeProvider>
   );
@@ -85,32 +85,28 @@ function MultipleTree() {
   return (
     <TreeProvider defaultExpandedIds={["multi-src"]} selectionMode="multiple">
       <Tree aria-label="Multiple">
-        <TreeItem id="multi-src" folder>
-          Multi src
-        </TreeItem>
-        <TreeItem id="multi-a" folderPath={["multi-src"]}>
-          Multi a
-        </TreeItem>
-        <TreeItem id="multi-disabled" folderPath={["multi-src"]} disabled>
-          Multi disabled
-        </TreeItem>
+        <TreeItem id="multi-src" folder label="Multi src" />
+        <TreeItem id="multi-a" folderPath={["multi-src"]} label="Multi a" />
+        <TreeItem
+          id="multi-disabled"
+          folderPath={["multi-src"]}
+          disabled
+          label="Multi disabled"
+        />
         <TreeItem
           id="multi-readonly"
           folderPath={["multi-src"]}
           selectable={false}
-        >
-          Multi readonly
-        </TreeItem>
-        <TreeItem id="multi-b" folderPath={["multi-src"]}>
-          Multi b
-        </TreeItem>
-        <TreeItem id="multi-closed" folder>
-          Multi closed
-        </TreeItem>
-        <TreeItem id="multi-hidden" folderPath={["multi-closed"]}>
-          Multi hidden
-        </TreeItem>
-        <TreeItem id="multi-last">Multi last</TreeItem>
+          label="Multi readonly"
+        />
+        <TreeItem id="multi-b" folderPath={["multi-src"]} label="Multi b" />
+        <TreeItem id="multi-closed" folder label="Multi closed" />
+        <TreeItem
+          id="multi-hidden"
+          folderPath={["multi-closed"]}
+          label="Multi hidden"
+        />
+        <TreeItem id="multi-last" label="Multi last" />
       </Tree>
     </TreeProvider>
   );
@@ -125,15 +121,9 @@ function CheckedMultipleTree() {
       selectionAttribute="checked"
     >
       <Tree aria-label="Checked multiple">
-        <TreeItem id="check-src" folder>
-          Check src
-        </TreeItem>
-        <TreeItem id="check-a" folderPath={["check-src"]}>
-          Check a
-        </TreeItem>
-        <TreeItem id="check-b" folderPath={["check-src"]}>
-          Check b
-        </TreeItem>
+        <TreeItem id="check-src" folder label="Check src" />
+        <TreeItem id="check-a" folderPath={["check-src"]} label="Check a" />
+        <TreeItem id="check-b" folderPath={["check-src"]} label="Check b" />
       </Tree>
     </TreeProvider>
   );
@@ -155,15 +145,9 @@ function ControlledTree() {
         }}
       >
         <Tree aria-label="Controlled">
-          <TreeItem id="ctrl-src" folder>
-            Ctrl src
-          </TreeItem>
-          <TreeItem id="ctrl-a" folderPath={["ctrl-src"]}>
-            Ctrl a
-          </TreeItem>
-          <TreeItem id="ctrl-b" folderPath={["ctrl-src"]}>
-            Ctrl b
-          </TreeItem>
+          <TreeItem id="ctrl-src" folder label="Ctrl src" />
+          <TreeItem id="ctrl-a" folderPath={["ctrl-src"]} label="Ctrl a" />
+          <TreeItem id="ctrl-b" folderPath={["ctrl-src"]} label="Ctrl b" />
         </Tree>
       </TreeProvider>
       <div role="status">{`selected:${selectedIds.join("|")} calls:${calls}`}</div>

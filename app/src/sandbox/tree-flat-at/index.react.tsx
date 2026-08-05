@@ -198,18 +198,18 @@ function DeclarativeNested() {
     <TreeProvider defaultExpandedIds={["p-src"]}>
       <Tree aria-label="Production nested">
         <TreeFolder id="p-src">
-          <TreeItem>P src</TreeItem>
+          <TreeItem label="P src" />
           <TreeLevel>
-            <TreeItem id="p-button">P button.tsx</TreeItem>
+            <TreeItem id="p-button" label="P button.tsx" />
             <TreeFolder id="p-tests">
-              <TreeItem>P tests</TreeItem>
+              <TreeItem label="P tests" />
               <TreeLevel>
-                <TreeItem id="p-test">P button.test.tsx</TreeItem>
+                <TreeItem id="p-test" label="P button.test.tsx" />
               </TreeLevel>
             </TreeFolder>
           </TreeLevel>
         </TreeFolder>
-        <TreeItem id="p-package">P package.json</TreeItem>
+        <TreeItem id="p-package" label="P package.json" />
       </Tree>
     </TreeProvider>
   );
@@ -223,15 +223,9 @@ function SingleSelection() {
       defaultSelectedIds={["s-a"]}
     >
       <Tree aria-label="Production single">
-        <TreeItem id="s-src" folder>
-          S src
-        </TreeItem>
-        <TreeItem id="s-a" folderPath={["s-src"]}>
-          S a
-        </TreeItem>
-        <TreeItem id="s-b" folderPath={["s-src"]}>
-          S b
-        </TreeItem>
+        <TreeItem id="s-src" folder label="S src" />
+        <TreeItem id="s-a" folderPath={["s-src"]} label="S a" />
+        <TreeItem id="s-b" folderPath={["s-src"]} label="S b" />
       </Tree>
     </TreeProvider>
   );
@@ -241,18 +235,20 @@ function MultipleSelected() {
   return (
     <TreeProvider defaultExpandedIds={["m-src"]} selectionMode="multiple">
       <Tree aria-label="Production multiple selected">
-        <TreeItem id="m-src" folder>
-          M src
-        </TreeItem>
-        <TreeItem id="m-a" folderPath={["m-src"]}>
-          M a
-        </TreeItem>
-        <TreeItem id="m-disabled" folderPath={["m-src"]} disabled>
-          M disabled
-        </TreeItem>
-        <TreeItem id="m-readonly" folderPath={["m-src"]} selectable={false}>
-          M readonly
-        </TreeItem>
+        <TreeItem id="m-src" folder label="M src" />
+        <TreeItem id="m-a" folderPath={["m-src"]} label="M a" />
+        <TreeItem
+          id="m-disabled"
+          folderPath={["m-src"]}
+          disabled
+          label="M disabled"
+        />
+        <TreeItem
+          id="m-readonly"
+          folderPath={["m-src"]}
+          selectable={false}
+          label="M readonly"
+        />
       </Tree>
     </TreeProvider>
   );
@@ -267,15 +263,9 @@ function MultipleChecked() {
       defaultSelectedIds={["k-a"]}
     >
       <Tree aria-label="Production multiple checked">
-        <TreeItem id="k-src" folder>
-          K src
-        </TreeItem>
-        <TreeItem id="k-a" folderPath={["k-src"]}>
-          K a
-        </TreeItem>
-        <TreeItem id="k-b" folderPath={["k-src"]}>
-          K b
-        </TreeItem>
+        <TreeItem id="k-src" folder label="K src" />
+        <TreeItem id="k-a" folderPath={["k-src"]} label="K a" />
+        <TreeItem id="k-b" folderPath={["k-src"]} label="K b" />
       </Tree>
     </TreeProvider>
   );
@@ -285,15 +275,9 @@ function VirtualFocus() {
   return (
     <TreeProvider defaultExpandedIds={["v-src"]} virtualFocus>
       <Tree aria-label="Production virtual focus">
-        <TreeItem id="v-src" folder>
-          V src
-        </TreeItem>
-        <TreeItem id="v-a" folderPath={["v-src"]}>
-          V a
-        </TreeItem>
-        <TreeItem id="v-b" folderPath={["v-src"]}>
-          V b
-        </TreeItem>
+        <TreeItem id="v-src" folder label="V src" />
+        <TreeItem id="v-a" folderPath={["v-src"]} label="V a" />
+        <TreeItem id="v-b" folderPath={["v-src"]} label="V b" />
       </Tree>
     </TreeProvider>
   );
@@ -303,13 +287,9 @@ function HorizontalTree() {
   return (
     <TreeProvider defaultExpandedIds={["h-src"]}>
       <Tree aria-label="Production horizontal" orientation="horizontal">
-        <TreeItem id="h-src" folder>
-          H src
-        </TreeItem>
-        <TreeItem id="h-a" folderPath={["h-src"]}>
-          H a
-        </TreeItem>
-        <TreeItem id="h-b">H b</TreeItem>
+        <TreeItem id="h-src" folder label="H src" />
+        <TreeItem id="h-a" folderPath={["h-src"]} label="H a" />
+        <TreeItem id="h-b" label="H b" />
       </Tree>
     </TreeProvider>
   );
@@ -350,9 +330,7 @@ function VirtualizedTree() {
           initialItems={6}
         >
           {({ name, ...item }) => (
-            <TreeItem key={item.id} {...item}>
-              {name}
-            </TreeItem>
+            <TreeItem key={item.id} {...item} label={name} />
           )}
         </TreeRenderer>
       </div>

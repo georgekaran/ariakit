@@ -73,11 +73,7 @@ const items = createFileItems();
  * consumer's own item type, so `name` is known here without a cast.
  */
 function renderFileItem({ name, ...item }: TreeRendererItemProps<FileItem>) {
-  return (
-    <TreeItem key={item.id} {...item}>
-      {name}
-    </TreeItem>
-  );
+  return <TreeItem key={item.id} {...item} label={name} />;
 }
 
 function Status() {
@@ -123,9 +119,7 @@ function NestedDataTree() {
             itemSize={32}
           >
             {({ name, ...item }) => (
-              <TreeItem key={item.id} {...item}>
-                {name}
-              </TreeItem>
+              <TreeItem key={item.id} {...item} label={name} />
             )}
           </TreeRenderer>
         </TreeProvider>
@@ -177,9 +171,7 @@ function ForcedVirtualFocusTree() {
           initialItems={6}
         >
           {({ name, ...item }) => (
-            <TreeItem key={item.id} {...item}>
-              {name}
-            </TreeItem>
+            <TreeItem key={item.id} {...item} label={name} />
           )}
         </TreeRenderer>
       </div>
@@ -192,15 +184,9 @@ function RovingTree() {
   return (
     <TreeProvider defaultExpandedIds={["rove-src"]}>
       <Tree aria-label="Roving tree">
-        <TreeItem id="rove-src" folder>
-          Rove src
-        </TreeItem>
-        <TreeItem id="rove-a" folderPath={["rove-src"]}>
-          Rove a
-        </TreeItem>
-        <TreeItem id="rove-b" folderPath={["rove-src"]}>
-          Rove b
-        </TreeItem>
+        <TreeItem id="rove-src" folder label="Rove src" />
+        <TreeItem id="rove-a" folderPath={["rove-src"]} label="Rove a" />
+        <TreeItem id="rove-b" folderPath={["rove-src"]} label="Rove b" />
       </Tree>
     </TreeProvider>
   );

@@ -99,9 +99,8 @@ function DynamicTree() {
             id={node.id}
             folder={node.folder}
             folderPath={node.folderPath}
-          >
-            {node.name}
-          </TreeItem>
+            label={node.name}
+          />
         ))}
       </Tree>
 
@@ -131,15 +130,16 @@ function RegistrationOnlyTree() {
         defaultSelectedIds={["reg-optional"]}
       >
         <Tree aria-label="Registration only">
-          <TreeItem id="reg-src" folder>
-            Reg src
-          </TreeItem>
+          <TreeItem id="reg-src" folder label="Reg src" />
           {mounted ? (
-            <TreeItem id="reg-optional" folder folderPath={["reg-src"]}>
-              Reg optional
-            </TreeItem>
+            <TreeItem
+              id="reg-optional"
+              folder
+              folderPath={["reg-src"]}
+              label="Reg optional"
+            />
           ) : null}
-          <TreeItem id="reg-last">Reg last</TreeItem>
+          <TreeItem id="reg-last" label="Reg last" />
         </Tree>
       </TreeProvider>
     </div>

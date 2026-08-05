@@ -13,9 +13,9 @@ import { TreeFolderContext, TreeLevelContext } from "./tree-context.tsx";
  * @example
  * ```jsx
  * <TreeFolder id="src">
- *   <TreeItem>src</TreeItem>
+ *   <TreeItem label="src" />
  *   <TreeLevel>
- *     <TreeItem id="button">button.tsx</TreeItem>
+ *     <TreeItem id="button" label="button.tsx" />
  *   </TreeLevel>
  * </TreeFolder>
  * ```

@@ -38,8 +38,8 @@ export function useTreeStoreProps<T extends Core.TreeStore>(
  * const tree = useTreeStore({ defaultExpandedIds: ["src"] });
  *
  * <Tree store={tree} aria-label="Project files">
- *   <TreeItem id="src" folder>src</TreeItem>
- *   <TreeItem id="button" folderPath={["src"]}>button.tsx</TreeItem>
+ *   <TreeItem id="src" folder label="src" />
+ *   <TreeItem id="button" folderPath={["src"]} label="button.tsx" />
  * </Tree>
  * ```
  */

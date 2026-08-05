@@ -47,9 +47,12 @@ export default function Example() {
           className="tree"
         >
           {({ name, ...item }) => (
-            <Ariakit.TreeItem key={item.id} {...item} className="tree-item">
-              {name}
-            </Ariakit.TreeItem>
+            <Ariakit.TreeItem
+              key={item.id}
+              {...item}
+              className="tree-item"
+              label={name}
+            />
           )}
         </Ariakit.TreeRenderer>
       </div>

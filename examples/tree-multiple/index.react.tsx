@@ -14,33 +14,30 @@ export default function Example() {
         setSelectedIds={setSelectedIds}
       >
         <Ariakit.Tree aria-label="Files to move" className="tree">
-          <Ariakit.TreeItem id="src" folder className="tree-item">
-            src
-          </Ariakit.TreeItem>
+          <Ariakit.TreeItem id="src" folder className="tree-item" label="src" />
           <Ariakit.TreeItem
             id="button"
             folderPath={["src"]}
             className="tree-item"
-          >
-            button.tsx
-          </Ariakit.TreeItem>
+            label="button.tsx"
+          />
           <Ariakit.TreeItem
             id="dialog"
             folderPath={["src"]}
             className="tree-item"
-          >
-            dialog.tsx
-          </Ariakit.TreeItem>
+            label="dialog.tsx"
+          />
           <Ariakit.TreeItem
             id="index"
             folderPath={["src"]}
             className="tree-item"
-          >
-            index.ts
-          </Ariakit.TreeItem>
-          <Ariakit.TreeItem id="package" className="tree-item">
-            package.json
-          </Ariakit.TreeItem>
+            label="index.ts"
+          />
+          <Ariakit.TreeItem
+            id="package"
+            className="tree-item"
+            label="package.json"
+          />
         </Ariakit.Tree>
       </Ariakit.TreeProvider>
 

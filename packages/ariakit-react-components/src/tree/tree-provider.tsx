@@ -11,8 +11,8 @@ import { useTreeStore } from "./tree-store.ts";
  * ```jsx
  * <TreeProvider defaultExpandedIds={["src"]}>
  *   <Tree aria-label="Project files">
- *     <TreeItem id="src" folder>src</TreeItem>
- *     <TreeItem id="button" folderPath={["src"]}>button.tsx</TreeItem>
+ *     <TreeItem id="src" folder label="src" />
+ *     <TreeItem id="button" folderPath={["src"]} label="button.tsx" />
  *   </Tree>
  * </TreeProvider>
  * ```

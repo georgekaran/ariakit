@@ -32,7 +32,7 @@ type TagName = typeof TagName;
  * const store = useTreeStore();
  * const props = useTree({ store });
  * <Role {...props} aria-label="Project files">
- *   <TreeItem store={store} id="src" folder>src</TreeItem>
+ *   <TreeItem store={store} id="src" folder label="src" />
  * </Role>
  * ```
  */
@@ -113,8 +113,8 @@ export const useTree = createHook<TagName, TreeOptions>(function useTree({
  * ```jsx
  * <TreeProvider defaultExpandedIds={["src"]}>
  *   <Tree aria-label="Project files">
- *     <TreeItem id="src" folder>src</TreeItem>
- *     <TreeItem id="button" folderPath={["src"]}>button.tsx</TreeItem>
+ *     <TreeItem id="src" folder label="src" />
+ *     <TreeItem id="button" folderPath={["src"]} label="button.tsx" />
  *   </Tree>
  * </TreeProvider>
  * ```
