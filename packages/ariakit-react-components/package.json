@@ -278,6 +278,11 @@
     "./tooltip/tooltip-context": "./src/tooltip/tooltip-context.tsx",
     "./tooltip/tooltip-provider": "./src/tooltip/tooltip-provider.tsx",
     "./tooltip/tooltip-store": "./src/tooltip/tooltip-store.ts",
+    "./tree/tree": "./src/tree/tree.tsx",
+    "./tree/tree-context": "./src/tree/tree-context.tsx",
+    "./tree/tree-item": "./src/tree/tree-item.tsx",
+    "./tree/tree-provider": "./src/tree/tree-provider.tsx",
+    "./tree/tree-store": "./src/tree/tree-store.ts",
     "./visually-hidden/visually-hidden": "./src/visually-hidden/visually-hidden.tsx",
     "./package.json": "./package.json"
   }
