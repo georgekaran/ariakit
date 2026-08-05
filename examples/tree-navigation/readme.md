@@ -25,7 +25,7 @@ If your navigation is a set of collapsible groups of links, [Disclosure](/compon
 
 ## Current page, not selection
 
-Navigation trees leave [`selectionMode`](/reference/tree-provider#selectionmode) at its default of `"none"`, so items carry no `aria-selected` or `aria-checked` at all. The page you are on is marked with `aria-current="page"`.
+Navigation trees leave [`selectionMode`](/reference/tree#selectionmode) at its default of `"none"`, so items carry no `aria-selected` or `aria-checked` at all. The page you are on is marked with `aria-current="page"`.
 
 The distinction matters. Selection says "you have picked these items and something will act on them." `aria-current` says "this is where you are." A navigation tree has the second and not the first.
 

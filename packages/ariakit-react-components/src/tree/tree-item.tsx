@@ -35,9 +35,8 @@ import { useCallback, useContext, useMemo } from "react";
 import type { CompositeItemOptions } from "../composite/composite-item.tsx";
 import { useCompositeItem } from "../composite/composite-item.tsx";
 import {
-  TreeFolderContext,
+  TreeHierarchyContext,
   TreeItemContext,
-  TreeLevelContext,
   useTreeScopedContext,
 } from "./tree-context.tsx";
 import { TreeItemArrow } from "./tree-item-arrow.tsx";
@@ -232,13 +231,11 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
         "TreeItem must be wrapped in a Tree component.",
     );
 
-    // Explicit props always win over the values inherited from the nested
-    // authoring providers.
-    const folderContext = useContext(TreeFolderContext);
-    const levelContext = useContext(TreeLevelContext);
+    // Explicit props always win over the inherited ancestor path.
+    const hierarchyContext = useContext(TreeHierarchyContext);
 
     const defaultId = useId();
-    const id = props.id || folderContext?.id || defaultId;
+    const id = props.id || defaultId;
 
     // Any supplied children value means this row owns descendants, including
     // null, false, and an empty array.
@@ -254,12 +251,12 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
       );
     }
 
-    const folder = hasStructuralChildren || (folderProp ?? !!folderContext);
+    const folder = hasStructuralChildren || (folderProp ?? false);
 
     // A path supplied inline creates a new array on every render, which would
     // otherwise re-register the item in an endless loop. Comparing by content
     // keeps the registered metadata stable.
-    const suppliedPath = folderPathProp ?? levelContext ?? EMPTY_PATH;
+    const suppliedPath = folderPathProp ?? hierarchyContext ?? EMPTY_PATH;
     const folderPathKey = suppliedPath.join("");
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed by content
     const folderPath = useMemo(() => suppliedPath, [folderPathKey]);
@@ -453,9 +450,9 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
           <TreeItemContext.Provider value={itemContext}>
             {element}
           </TreeItemContext.Provider>
-          <TreeLevelContext.Provider value={descendantPath}>
+          <TreeHierarchyContext.Provider value={descendantPath}>
             {structuralChildren}
-          </TreeLevelContext.Provider>
+          </TreeHierarchyContext.Provider>
         </>
       ),
       [itemContext, descendantPath, structuralChildren],

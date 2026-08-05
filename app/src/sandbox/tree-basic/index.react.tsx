@@ -4,10 +4,10 @@ import {
   TreeItem,
   TreeItemArrow,
   TreeProvider,
+  useTreeLevel,
   useTreeStore,
 } from "@ariakit/react";
 import type { TreeStoreItem } from "@ariakit/react";
-import { useTreeLevel } from "@ariakit/react-components/tree/tree-level";
 import { useTreeContext } from "@ariakit/react/tree";
 import type { ComponentProps, CSSProperties, ElementRef } from "react";
 import { useEffect, useRef, useState } from "react";

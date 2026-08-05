@@ -30,7 +30,7 @@ Modifier keys are never _required_. A plain click toggles, and <kbd>Ctrl</kbd>/<
 
 ## Selection state belongs on the treeitem
 
-The selected state is exposed on the `treeitem` itself through `aria-selected`, or through `aria-checked` when you set [`selectionAttribute`](/reference/tree-provider#selectionattribute) to `"checked"`. A tree never emits both.
+The selected state is exposed on the `treeitem` itself through `aria-selected`, or through `aria-checked` when you set [`selectionAttribute`](/reference/tree#selectionattribute) to `"checked"`. A tree never emits both.
 
 Do not put a focusable checkbox inside a tree item. A nested control is not reliably announced during tree navigation, and it adds a second tab stop where the pattern expects one. If your rows genuinely need independent controls, you want a TreeGrid rather than a Tree.
 
@@ -40,4 +40,4 @@ Selection is stored by id, so collapsing a branch, virtualizing it, or unmountin
 
 ## Removing data
 
-Pass complete [`items`](/reference/tree-provider#items) or `defaultItems` when you want the store to prune expansion and selection for data you deleted. A purely declarative tree only knows which items are currently registered, and unregistering happens for many innocent reasons: StrictMode, conditional rendering, virtualization. Ariakit cannot tell those apart from a deletion, so it keeps the ids. Controlled consumers can always prune the ids themselves.
+Pass complete [`items`](/reference/tree#items) or `defaultItems` when you want the store to prune expansion and selection for data you deleted. A purely declarative tree only knows which items are currently registered, and unregistering happens for many innocent reasons: StrictMode, conditional rendering, virtualization. Ariakit cannot tell those apart from a deletion, so it keeps the ids. Controlled consumers can always prune the ids themselves.

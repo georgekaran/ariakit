@@ -52,21 +52,5 @@ export const TreeItemContext = createContext<TreeItemContextValue | undefined>(
   undefined,
 );
 
-interface TreeFolderContextValue {
-  id: string;
-}
-
-/**
- * Identifies the branch a directly nested `TreeItem` describes. This is an
- * implementation context for the nested authoring sugar, not a public context
- * hook. `TreeLevel` masks it so descendants do not become branches by accident.
- */
-export const TreeFolderContext = createContext<TreeFolderContextValue | null>(
-  null,
-);
-
-/**
- * The complete ancestor path inherited by every `TreeItem` inside a
- * `TreeLevel`.
- */
-export const TreeLevelContext = createContext<readonly string[]>([]);
+/** Complete ancestor path inherited by structurally nested TreeItems. */
+export const TreeHierarchyContext = createContext<readonly string[]>([]);
