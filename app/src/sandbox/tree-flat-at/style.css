@@ -112,7 +112,7 @@
  * Disclosure triangle. `content: ""` keeps it out of the accessibility tree,
  * and the shape is drawn with borders so it survives forced-colors mode.
  */
-[role="treeitem"]::before {
+.static-tree [role="treeitem"]::before {
   content: "";
   flex: none;
   width: 0;
@@ -123,12 +123,12 @@
   transform: rotate(0deg);
 }
 
-[role="treeitem"][aria-expanded="true"]::before {
+.static-tree [role="treeitem"][aria-expanded="true"]::before {
   transform: rotate(90deg);
 }
 
 /* Leaves keep the space so labels stay aligned, but show no marker. */
-[role="treeitem"]:not([aria-expanded])::before {
+.static-tree [role="treeitem"]:not([aria-expanded])::before {
   visibility: hidden;
 }
 

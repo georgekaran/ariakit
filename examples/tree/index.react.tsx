@@ -1,69 +1,51 @@
 import * as Ariakit from "@ariakit/react";
-import type { MouseEvent } from "react";
 import "./style.css";
 
 export default function Example() {
-  const tree = Ariakit.useTreeStore({ defaultExpandedIds: ["src"] });
-
-  // One handler on the row. The chevron is decorative, so clicking it toggles
-  // the branch while clicking anywhere else keeps the row's normal behavior.
-  // A nested button would add a second tab stop inside the treeitem.
-  const toggleFromDisclosure = (id: string) => (event: MouseEvent) => {
-    const { target } = event;
-    if (!(target instanceof Element)) return;
-    if (!target.closest("[data-tree-disclosure]")) return;
-    tree.toggle(id);
-  };
-
   return (
-    <Ariakit.Tree store={tree} aria-label="Project files" className="tree">
-      <Ariakit.TreeFolder id="src">
+    <Ariakit.Tree
+      aria-label="Project files"
+      className="tree"
+      defaultExpandedIds={["src"]}
+    >
+      {/* The root renders its own arrow; descendants get one automatically. */}
+      <Ariakit.TreeItem
+        id="src"
+        label="src"
+        className="tree-item"
+        toggleOnClick={false}
+        toggleOnKeyPress
+        render={(props) => (
+          <Ariakit.Role.div {...props}>
+            <Ariakit.TreeItemArrow />
+            {props.children}
+          </Ariakit.Role.div>
+        )}
+      >
         <Ariakit.TreeItem
+          id="components"
+          label="components"
           className="tree-item"
-          onClick={toggleFromDisclosure("src")}
         >
-          <span
-            aria-hidden="true"
-            data-tree-disclosure
-            className="disclosure"
+          <Ariakit.TreeItem
+            id="button"
+            label="button.tsx"
+            className="tree-item"
           />
-          src
+          <Ariakit.TreeItem
+            id="dialog"
+            label="dialog.tsx"
+            className="tree-item"
+          />
         </Ariakit.TreeItem>
-        <Ariakit.TreeLevel>
-          <Ariakit.TreeFolder id="components">
-            <Ariakit.TreeItem
-              className="tree-item"
-              onClick={toggleFromDisclosure("components")}
-            >
-              <span
-                aria-hidden="true"
-                data-tree-disclosure
-                className="disclosure"
-              />
-              components
-            </Ariakit.TreeItem>
-            <Ariakit.TreeLevel>
-              <Ariakit.TreeItem
-                id="button"
-                className="tree-item"
-                label="button.tsx"
-              />
-              <Ariakit.TreeItem
-                id="dialog"
-                className="tree-item"
-                label="dialog.tsx"
-              />
-            </Ariakit.TreeLevel>
-          </Ariakit.TreeFolder>
-          <Ariakit.TreeItem id="index" className="tree-item" label="index.ts" />
-        </Ariakit.TreeLevel>
-      </Ariakit.TreeFolder>
+        <Ariakit.TreeItem id="index" label="index.ts" className="tree-item" />
+      </Ariakit.TreeItem>
       <Ariakit.TreeItem
         id="package"
-        className="tree-item"
         label="package.json"
+        className="tree-item"
       />
-      <Ariakit.TreeItem id="readme" className="tree-item" label="readme.md" />
+      <Ariakit.TreeItem id="readme" label="readme.md" className="tree-item" />
     </Ariakit.Tree>
   );
 }

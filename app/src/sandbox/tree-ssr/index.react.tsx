@@ -81,12 +81,24 @@ export function SsrRendererTree() {
   );
 }
 
+/** Nested authoring with generated ids, for hydration stability checks. */
+export function SsrNestedGeneratedTree() {
+  return (
+    <Tree aria-label="SSR generated nested">
+      <TreeItem label="SSR generated root">
+        <TreeItem label="SSR generated child" />
+      </TreeItem>
+    </Tree>
+  );
+}
+
 export default function Example() {
   return (
     <div>
       <SsrTree />
       <SsrCheckedTree />
       <SsrRendererTree />
+      <SsrNestedGeneratedTree />
     </div>
   );
 }

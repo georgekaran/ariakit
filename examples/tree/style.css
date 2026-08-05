@@ -13,6 +13,11 @@
   ;
 }
 
+/*
+ * Scoped to non-hidden rows: an explicit `display` would otherwise override the
+ * browser's `[hidden] { display: none }` and leave collapsed descendants on
+ * screen.
+ */
 .tree-item:not([hidden]) {
   @apply
     flex
@@ -24,7 +29,6 @@
     py-1.5
     text-base
     select-none
-    ps-2
     aria-disabled:opacity-50
     hover:bg-blue-600/10
     data-[active-item]:bg-blue-600/15
@@ -34,43 +38,16 @@
     dark:data-[active-item]:bg-blue-400/20
     dark:data-[selected]:bg-blue-500
   ;
-}
 
-/*
- * Depth comes from the declared level, never from wrapper elements, and is
- * declared after the row rule so it wins on equal specificity.
- */
-.tree-item[aria-level="2"] {
-  @apply ps-6;
-}
-
-.tree-item[aria-level="3"] {
-  @apply ps-10;
+  /*
+   * Depth comes from the zero-based `--level` custom property that TreeItem
+   * sets, so no per-level selector is needed and any depth works.
+   */
+  padding-inline-start: calc(0.5rem + var(--level) * 1rem);
 }
 
 .tree-item[data-focus-visible] {
   @apply outline-2 outline-blue-600 dark:outline-blue-500;
-}
-
-/*
- * The chevron is decorative. Empty generated content keeps it out of the
- * accessibility tree, and borders keep the shape in forced-colors mode.
- */
-.disclosure {
-  @apply size-0 shrink-0 transition-transform;
-
-  border-block: 0.3rem solid transparent;
-  border-inline-start: 0.45rem solid currentcolor;
-  border-inline-end: 0;
-}
-
-.tree-item[aria-expanded="true"] .disclosure {
-  @apply rotate-90;
-}
-
-/* Leaves keep the gutter so labels line up. */
-.tree-item:not([aria-expanded]) .disclosure {
-  @apply invisible;
 }
 
 @media (forced-colors: active) {

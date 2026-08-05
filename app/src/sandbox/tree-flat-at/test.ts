@@ -226,3 +226,22 @@ test("uses complete sibling counts in the virtualized tree", async () => {
   expect(file).toHaveAttribute("aria-level", "2");
   expect(virtualized.treeitem.all.hidden().length).toBeLessThan(21);
 });
+
+test("keeps production arrows out of the accessibility model", () => {
+  for (const label of productionLabels) {
+    const items = q.within(q.tree.ensure(label)).treeitem.all.hidden();
+    for (const item of items) {
+      const arrow = item.querySelector<HTMLElement>("span[aria-hidden='true']");
+      expect(arrow).toBeInTheDocument();
+      expect(arrow).not.toHaveAttribute("tabindex");
+      expect(arrow?.querySelector("svg")).toBeInTheDocument();
+    }
+  }
+});
+
+test("keeps production TreeItem nesting flat in the DOM", () => {
+  const tree = q.tree.ensure("Production nested");
+  const items = q.within(tree).treeitem.all.hidden();
+  expect(items).toHaveLength(5);
+  for (const item of items) expect(item.parentElement).toBe(tree);
+});

@@ -20,6 +20,7 @@
 .tree-item:not([hidden]) {
   @apply
     flex
+    gap-1.5
     scroll-m-2
     items-center
     rounded

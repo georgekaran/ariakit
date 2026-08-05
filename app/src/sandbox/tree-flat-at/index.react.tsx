@@ -1,11 +1,4 @@
-import {
-  Tree,
-  TreeFolder,
-  TreeItem,
-  TreeLevel,
-  TreeProvider,
-  TreeRenderer,
-} from "@ariakit/react";
+import { Tree, TreeItem, TreeProvider, TreeRenderer } from "@ariakit/react";
 import type { TreeRendererItemObject } from "@ariakit/react";
 import type { KeyboardEvent } from "react";
 import { useState } from "react";
@@ -124,7 +117,7 @@ function FlatTree() {
     useTreeFixture("flat");
 
   return (
-    <div role="tree" aria-label="Flat project files">
+    <div role="tree" aria-label="Flat project files" className="static-tree">
       {visibleNodes.map((node) => (
         <div
           key={node.id}
@@ -181,7 +174,7 @@ function NestedTree() {
   };
 
   return (
-    <div role="tree" aria-label="Nested project files">
+    <div role="tree" aria-label="Nested project files" className="static-tree">
       {renderItems(undefined)}
     </div>
   );
@@ -195,23 +188,15 @@ function NestedTree() {
 /** Nested authoring sugar producing the same flat treeitem semantics. */
 function DeclarativeNested() {
   return (
-    <TreeProvider defaultExpandedIds={["p-src"]}>
-      <Tree aria-label="Production nested">
-        <TreeFolder id="p-src">
-          <TreeItem label="P src" />
-          <TreeLevel>
-            <TreeItem id="p-button" label="P button.tsx" />
-            <TreeFolder id="p-tests">
-              <TreeItem label="P tests" />
-              <TreeLevel>
-                <TreeItem id="p-test" label="P button.test.tsx" />
-              </TreeLevel>
-            </TreeFolder>
-          </TreeLevel>
-        </TreeFolder>
-        <TreeItem id="p-package" label="P package.json" />
-      </Tree>
-    </TreeProvider>
+    <Tree defaultExpandedIds={["p-src"]} aria-label="Production nested">
+      <TreeItem id="p-src" label="P src">
+        <TreeItem id="p-button" label="P button.tsx" />
+        <TreeItem id="p-tests" label="P tests">
+          <TreeItem id="p-test" label="P button.test.tsx" />
+        </TreeItem>
+      </TreeItem>
+      <TreeItem id="p-package" label="P package.json" />
+    </Tree>
   );
 }
 
@@ -374,7 +359,7 @@ export default function Example() {
       <h2 className="page-heading">Production cases</h2>
       <Case
         title="3. Production nested"
-        note="TreeFolder and TreeLevel sugar over the flat model."
+        note="Nested TreeItem authoring over the flat semantic model."
       >
         <DeclarativeNested />
       </Case>
