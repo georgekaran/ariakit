@@ -143,6 +143,40 @@ function CheckedFiles() {
 }
 
 /**
+ * A non-selectable tree used to check that activation reaches consumer
+ * handlers and that a consumer can cancel the built-in hierarchy keys.
+ */
+function Activation() {
+  const [log, setLog] = useState<string[]>([]);
+  return (
+    <div>
+      <TreeProvider defaultExpandedIds={["act-src"]}>
+        <Tree aria-label="Activation">
+          <TreeItem
+            id="act-src"
+            folder
+            onClick={() => setLog((entries) => [...entries, "act-src"])}
+          >
+            Act src
+          </TreeItem>
+          <TreeItem id="act-child" folderPath={["act-src"]}>
+            Act child
+          </TreeItem>
+          <TreeItem
+            id="act-blocked"
+            folder
+            onKeyDown={(event) => event.preventDefault()}
+          >
+            Act blocked
+          </TreeItem>
+        </Tree>
+      </TreeProvider>
+      <div role="status">{log.join(",")}</div>
+    </div>
+  );
+}
+
+/**
  * Rendered on demand so the development warning it triggers never fires during
  * unrelated tests.
  */
@@ -174,6 +208,7 @@ export default function Example() {
       <NestedProjectFiles />
       <GeneratedIds />
       <CheckedFiles />
+      <Activation />
       <InvalidLevel />
     </div>
   );

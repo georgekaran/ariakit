@@ -1,4 +1,4 @@
-import { click, q } from "@ariakit/test";
+import { click, focus, press, q } from "@ariakit/test";
 import { expect, test, vi } from "vitest";
 
 function flat() {
@@ -237,4 +237,153 @@ test("warns once for a TreeLevel without a folder or a path", async () => {
   expect(warn).toHaveBeenCalledTimes(1);
   expect(warn.mock.calls[0]?.[0]).toMatch(/TreeLevel must be nested/);
   warn.mockRestore();
+});
+
+function act() {
+  return q.within(q.tree.ensure("Activation"));
+}
+
+test("moves down and up through visible nodes", async () => {
+  await focus(flat().treeitem.ensure("src"));
+  await press.ArrowDown();
+  expect(flat().treeitem.ensure("button.tsx")).toHaveFocus();
+  await press.ArrowDown();
+  expect(flat().treeitem.ensure("tests")).toHaveFocus();
+  await press.ArrowDown();
+  expect(flat().treeitem.ensure("package.json")).toHaveFocus();
+  await press.ArrowUp();
+  expect(flat().treeitem.ensure("tests")).toHaveFocus();
+});
+
+test("expands a closed branch without moving focus", async () => {
+  const tests = flat().treeitem.ensure("tests");
+  await focus(tests);
+  await press.ArrowRight();
+  expect(flat().treeitem.ensure("tests")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(flat().treeitem.ensure("tests")).toHaveFocus();
+});
+
+test("moves into an open branch", async () => {
+  await focus(flat().treeitem.ensure("src"));
+  await press.ArrowRight();
+  expect(flat().treeitem.ensure("button.tsx")).toHaveFocus();
+  expect(flat().treeitem.ensure("src")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+});
+
+test("does nothing when opening a leaf", async () => {
+  await focus(flat().treeitem.ensure("button.tsx"));
+  await press.ArrowRight();
+  expect(flat().treeitem.ensure("button.tsx")).toHaveFocus();
+  expect(flat().treeitem.ensure("button.tsx")).not.toHaveAttribute(
+    "aria-expanded",
+  );
+});
+
+test("collapses an open branch without moving focus", async () => {
+  await focus(flat().treeitem.ensure("src"));
+  await press.ArrowLeft();
+  expect(flat().treeitem.ensure("src")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  expect(flat().treeitem.ensure("src")).toHaveFocus();
+});
+
+test("moves to the parent from a leaf or a closed branch", async () => {
+  await focus(flat().treeitem.ensure("button.tsx"));
+  await press.ArrowLeft();
+  expect(flat().treeitem.ensure("src")).toHaveFocus();
+
+  await focus(flat().treeitem.ensure("tests"));
+  await press.ArrowLeft();
+  expect(flat().treeitem.ensure("src")).toHaveFocus();
+});
+
+test("does nothing when closing a root leaf", async () => {
+  await focus(flat().treeitem.ensure("package.json"));
+  await press.ArrowLeft();
+  expect(flat().treeitem.ensure("package.json")).toHaveFocus();
+});
+
+test("reaches the first and last visible nodes with Home and End", async () => {
+  await focus(flat().treeitem.ensure("button.tsx"));
+  await press.End();
+  expect(flat().treeitem.ensure("package.json")).toHaveFocus();
+  // End must not expand anything on the way.
+  expect(flat().treeitem.ensure("tests")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await press.Home();
+  expect(flat().treeitem.ensure("src")).toHaveFocus();
+});
+
+test("does not wrap at the boundaries", async () => {
+  await focus(flat().treeitem.ensure("src"));
+  await press.ArrowUp();
+  expect(flat().treeitem.ensure("src")).toHaveFocus();
+
+  await focus(flat().treeitem.ensure("package.json"));
+  await press.ArrowDown();
+  expect(flat().treeitem.ensure("package.json")).toHaveFocus();
+});
+
+test("skips disabled nodes while navigating", async () => {
+  await focus(checked().treeitem.ensure("Checked readonly.txt"));
+  await press.ArrowDown();
+  expect(checked().treeitem.ensure("Checked link")).toHaveFocus();
+});
+
+test("expands sibling branches at the same level with the asterisk key", async () => {
+  await focus(flat().treeitem.ensure("button.tsx"));
+  await press("*");
+  expect(flat().treeitem.ensure("tests")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  // Focus is unchanged and unrelated levels are untouched.
+  expect(flat().treeitem.ensure("button.tsx")).toHaveFocus();
+});
+
+test("never lands on a collapsed descendant with page keys", async () => {
+  await focus(flat().treeitem.ensure("src"));
+  await press.PageDown();
+  expect(flat().treeitem.ensure.hidden("button.test.tsx")).not.toHaveFocus();
+  await press.PageUp();
+  expect(flat().treeitem.ensure.hidden("button.test.tsx")).not.toHaveFocus();
+});
+
+test("activates through command semantics with Enter", async () => {
+  await focus(act().treeitem.ensure("Act src"));
+  await press.Enter();
+  expect(q.status.ensure()).toHaveTextContent("act-src");
+});
+
+test("does not change tree state on Space in a non-selectable tree", async () => {
+  const src = act().treeitem.ensure("Act src");
+  await focus(src);
+  await press.Space();
+  // Space never expands, and a tree without selection has nothing to toggle.
+  expect(act().treeitem.ensure("Act src")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(act().treeitem.ensure("Act src")).not.toHaveAttribute("aria-selected");
+});
+
+test("lets a consumer cancel the hierarchy keys", async () => {
+  await focus(act().treeitem.ensure("Act blocked"));
+  await press.ArrowRight();
+  expect(act().treeitem.ensure("Act blocked")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await press.ArrowUp();
+  expect(act().treeitem.ensure("Act blocked")).toHaveFocus();
 });

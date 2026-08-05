@@ -1,15 +1,22 @@
 import { getTreeSourceItems } from "@ariakit/components/tree/tree-store";
-import { getTreeItemMetadata } from "@ariakit/components/tree/utils";
+import {
+  getTreeFirstChild,
+  getTreeItemMetadata,
+  getTreeSiblings,
+  getVisibleTreeItems,
+  isTreeItemVisible,
+} from "@ariakit/components/tree/utils";
 import { useStoreState } from "@ariakit/react-store";
 import {
+  useEvent,
   useId,
   createElement,
   createHook,
   forwardRef,
 } from "@ariakit/react-utils";
 import type { Props } from "@ariakit/react-utils";
-import { disabledFromProps, invariant } from "@ariakit/utils";
-import type { ElementType } from "react";
+import { disabledFromProps, invariant, isSelfTarget } from "@ariakit/utils";
+import type { ElementType, KeyboardEvent } from "react";
 import { useCallback, useContext, useMemo } from "react";
 import type { CompositeItemOptions } from "../composite/composite-item.tsx";
 import { useCompositeItem } from "../composite/composite-item.tsx";
@@ -22,8 +29,88 @@ import type { TreeStore } from "./tree-store.ts";
 
 const TagName = "div" satisfies ElementType;
 type TagName = typeof TagName;
+type HTMLType = HTMLElementTagNameMap[TagName];
 
 const EMPTY_PATH: readonly string[] = [];
+
+interface TreeKeyItem {
+  id: string;
+  folder: boolean;
+  folderPath: readonly string[];
+}
+
+/**
+ * A closed branch opens in place; an open branch hands focus to its first
+ * visible enabled child. A leaf does nothing.
+ */
+function getExpandAction(store: TreeStore, item: TreeKeyItem) {
+  if (!item.folder) return;
+  const state = store.getState();
+  if (!state.expandedIds.includes(item.id)) {
+    return () => store.expand(item.id);
+  }
+  const child = getTreeFirstChild(
+    getTreeSourceItems(state),
+    state.expandedIds,
+    item.id,
+  );
+  if (!child) return;
+  return () => store.move(child.id);
+}
+
+/**
+ * An open branch closes in place; anything else walks up to the closest visible
+ * enabled ancestor. A root leaf or closed root branch does nothing.
+ */
+function getCollapseAction(store: TreeStore, item: TreeKeyItem) {
+  const state = store.getState();
+  if (item.folder && state.expandedIds.includes(item.id)) {
+    return () => store.collapse(item.id);
+  }
+  const visibleItems = getVisibleTreeItems(
+    getTreeSourceItems(state),
+    state.expandedIds,
+  );
+  for (const ancestorId of [...item.folderPath].reverse()) {
+    const ancestor = visibleItems.find(
+      (candidate) => candidate.id === ancestorId && !candidate.disabled,
+    );
+    if (ancestor) return () => store.move(ancestor.id);
+  }
+  return;
+}
+
+/**
+ * Expands the visible branches that share this item's exact path. Descendants
+ * at other paths are untouched and focus does not move.
+ */
+function expandSiblingFolders(store: TreeStore, item: TreeKeyItem) {
+  const state = store.getState();
+  const siblingIds = getTreeSiblings(getTreeSourceItems(state), item.id)
+    .filter((sibling) => sibling.folder)
+    .filter((sibling) => isTreeItemVisible(sibling, state.expandedIds))
+    .map((sibling) => sibling.id);
+  store.setExpandedIds((ids) => [...new Set([...ids, ...siblingIds])]);
+}
+
+/**
+ * Hierarchy keys stay physical: a vertical tree always opens with Right and
+ * closes with Left, including in RTL. A horizontal tree moves that behavior to
+ * Down and Up and leaves Right/Left to Composite's sequential movement.
+ */
+function getTreeKeyAction(
+  event: KeyboardEvent,
+  store: TreeStore,
+  item: TreeKeyItem,
+) {
+  const horizontal = store.getState().orientation === "horizontal";
+  const expandKey = horizontal ? "ArrowDown" : "ArrowRight";
+  const collapseKey = horizontal ? "ArrowUp" : "ArrowLeft";
+  if (event.key === expandKey) return getExpandAction(store, item);
+  if (event.key === collapseKey) return getCollapseAction(store, item);
+  if (event.key === "*") return () => expandSiblingFolders(store, item);
+  return;
+}
 
 /**
  * Returns props to create a `TreeItem` component.
@@ -114,6 +201,23 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
     const useCheckedAttribute =
       effectiveSelectable && selectionAttribute === "checked";
 
+    const onKeyDownProp = props.onKeyDown;
+
+    // Runs before Composite's generic movement. The consumer handler goes
+    // first and can cancel everything below by preventing the event.
+    const onKeyDown = useEvent((event: KeyboardEvent<HTMLType>) => {
+      onKeyDownProp?.(event);
+      if (event.defaultPrevented) return;
+      if (!isSelfTarget(event)) return;
+      if (!id) return;
+      const action = getTreeKeyAction(event, store, { id, folder, folderPath });
+      if (!action) return;
+      // Preventing default stops browser scrolling and keeps CompositeItem from
+      // applying a second movement for the same key.
+      event.preventDefault();
+      action();
+    });
+
     props = {
       role: "treeitem",
       "aria-level": metadata?.level ?? folderPath.length + 1,
@@ -126,6 +230,7 @@ export const useTreeItem = createHook<TagName, TreeItemOptions>(
       "data-selected": (effectiveSelectable && selected) || undefined,
       ...props,
       id,
+      onKeyDown,
       // Assigned after the consumer props so `hidden={false}` cannot expose a
       // descendant of a collapsed ancestor.
       hidden: hiddenByAncestor || props.hidden || undefined,
