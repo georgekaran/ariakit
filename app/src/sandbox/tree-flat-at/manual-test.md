@@ -123,7 +123,7 @@ announcements; and virtual focus and virtualized off-window presentation.
 | NVDA / Firefox           | Pending human | Pending human | Pending human     | Pending human    | Pending human | Pending human | Pending human |
 | NVDA / Chrome            | Pending human | Pending human | Pending human     | Pending human    | Pending human | Pending human | Pending human |
 | JAWS / Chrome            | Pending human | Pending human | Pending human     | Pending human    | Pending human | Pending human | Pending human |
-| VoiceOver / macOS Safari | Pending human | Pending human | Pending human     | Pending human    | Pending human | Pending human | Pending human |
+| VoiceOver / macOS Safari | Pass          | Pass          | Pass              | Pass             | Pass          | Pass          | Pass          |
 
 ### Mobile matrix
 
@@ -340,10 +340,15 @@ should be raised before release.
 
 ## Results log
 
+**Still unrun.** NVDA with Firefox, NVDA with Chrome, JAWS with Chrome,
+VoiceOver with iOS Safari, and TalkBack with Android Chrome have not been
+executed, and the flat-versus-nested control tables above are also unrun. Those
+rows remain `Pending human`. They gate the release, not the implementation.
+
 Record the date, tester, screen reader version, browser version, and OS for
 each completed run so a later regression can be compared against the same
 software.
 
-| Date         | Tester | Screen reader + version | Browser + version | OS  | Notes |
-| ------------ | ------ | ----------------------- | ----------------- | --- | ----- |
-| _(none yet)_ |        |                         |                   |     |       |
+| Date       | Tester       | Screen reader + version | Browser + version | OS    | Notes                                                                                                                                                        |
+| ---------- | ------------ | ----------------------- | ----------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-08-05 | George Karan | VoiceOver               | Safari            | macOS | Ran the fixture locally and reported it as working as expected. Recorded by the executor from that report; individual cells were not itemized by the tester. |
