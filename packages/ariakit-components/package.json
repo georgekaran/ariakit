@@ -46,6 +46,8 @@
     "./tag/tag-store": "./src/tag/tag-store.ts",
     "./toolbar/toolbar-store": "./src/toolbar/toolbar-store.ts",
     "./tooltip/tooltip-store": "./src/tooltip/tooltip-store.ts",
+    "./tree/tree-store": "./src/tree/tree-store.ts",
+    "./tree/utils": "./src/tree/utils.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
