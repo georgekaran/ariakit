@@ -1,0 +1,136 @@
+/*
+ * Styles for the shortcut accessibility fixture.
+ *
+ * Two rules matter more than the looks here:
+ *
+ * 1. The shortcut glyphs are decoration. They are already `aria-hidden` inside
+ *    a command, so nothing here may reintroduce them to the accessibility tree
+ *    or make them the only way to learn a shortcut.
+ * 2. No state may depend on color alone. The disabled command keeps an italic
+ *    label, and the disclosure flash keeps an outline, so both survive
+ *    forced-colors mode.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem;
+  font: inherit;
+  color: hsl(204 10% 10%);
+}
+
+.page-heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(204 10% 40%);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid hsl(204 10% 80%);
+  border-radius: 0.5rem;
+  background: white;
+}
+
+/* The flash when any descendant shortcut is pressed. */
+.toolbar[data-active] {
+  outline: 2px solid hsl(204 100% 40%);
+  outline-offset: 2px;
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid hsl(204 10% 80%);
+  border-radius: 0.375rem;
+  background: hsl(204 10% 97%);
+  font: inherit;
+  color: inherit;
+  cursor: default;
+}
+
+.button:hover:not([aria-disabled="true"]) {
+  background: hsl(204 10% 92%);
+}
+
+.button:focus-visible {
+  outline: 2px solid hsl(204 100% 40%);
+  outline-offset: -2px;
+}
+
+.button[aria-disabled="true"] {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.button kbd {
+  font-family: inherit;
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+.status {
+  margin: 0;
+  font-size: 0.875rem;
+  color: hsl(204 10% 40%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .page {
+    color: hsl(204 20% 94%);
+  }
+
+  .page-heading,
+  .status {
+    color: hsl(204 10% 65%);
+  }
+
+  .toolbar {
+    border-color: hsl(204 10% 30%);
+    background: hsl(204 10% 16%);
+  }
+
+  .button {
+    border-color: hsl(204 10% 35%);
+    background: hsl(204 10% 22%);
+  }
+
+  .button:hover:not([aria-disabled="true"]) {
+    background: hsl(204 10% 28%);
+  }
+
+  .toolbar[data-active],
+  .button:focus-visible {
+    outline-color: hsl(204 100% 70%);
+  }
+}
+
+/*
+ * Forced colors. System colors replace every custom value, and each state keeps
+ * a non-color cue so nothing depends on hue alone.
+ */
+@media (forced-colors: active) {
+  .toolbar,
+  .button {
+    border-color: CanvasText;
+  }
+
+  .button:focus-visible,
+  .toolbar[data-active] {
+    outline: 3px solid CanvasText;
+  }
+
+  .button[aria-disabled="true"] {
+    opacity: 1;
+    color: GrayText;
+  }
+}
