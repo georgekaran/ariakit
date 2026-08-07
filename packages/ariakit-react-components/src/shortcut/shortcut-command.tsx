@@ -75,7 +75,9 @@ export function useShortcutCommand(options: UseShortcutCommandOptions) {
   const target = useResolvedTarget(options.target);
   const hasTrigger = !!options.onTrigger;
   const onTrigger = useEvent(options.onTrigger);
-  const registry = useContext(ShortcutDisclosureRegistryContext);
+  // Depend on the stable `register` function rather than the registry object,
+  // whose identity changes on every registration.
+  const register = useContext(ShortcutDisclosureRegistryContext)?.register;
   const { keyShortcuts, disabled } = options;
 
   useEffect(() => {
@@ -88,13 +90,13 @@ export function useShortcutCommand(options: UseShortcutCommandOptions) {
   }, [store, keyShortcuts, disabled, hasTrigger, onTrigger, target]);
 
   useEffect(() => {
-    if (!registry) return;
+    if (!register) return;
     const texts = resolveKeyShortcuts(keyShortcuts).map(
       (shortcut) => shortcut.text,
     );
     if (!texts.length) return;
-    return registry.register(texts);
-  }, [registry, keyShortcuts]);
+    return register(texts);
+  }, [register, keyShortcuts]);
 }
 
 export interface UseShortcutCommandOptions {
@@ -148,7 +150,9 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     const resolvedTarget = useResolvedTarget(target);
     const hasTrigger = !!onTriggerProp;
     const onTrigger = useEvent(onTriggerProp);
-    const registry = useContext(ShortcutDisclosureRegistryContext);
+    // Depend on the stable `register` function rather than the registry
+    // object, whose identity changes on every registration.
+    const register = useContext(ShortcutDisclosureRegistryContext)?.register;
 
     const texts = useMemo(
       () =>
@@ -169,10 +173,10 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     }, [store, keyShortcuts, disabled, hasTrigger, onTrigger, resolvedTarget]);
 
     useEffect(() => {
-      if (!registry) return;
+      if (!register) return;
       if (!texts.length) return;
-      return registry.register(texts);
-    }, [registry, texts]);
+      return register(texts);
+    }, [register, texts]);
 
     const onClickProp = props.onClick;
 

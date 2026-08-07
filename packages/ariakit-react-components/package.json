@@ -249,6 +249,8 @@
     "./shortcut/shortcut": "./src/shortcut/shortcut.tsx",
     "./shortcut/shortcut-command": "./src/shortcut/shortcut-command.tsx",
     "./shortcut/shortcut-context": "./src/shortcut/shortcut-context.tsx",
+    "./shortcut/shortcut-disclosure": "./src/shortcut/shortcut-disclosure.tsx",
+    "./shortcut/shortcut-disclosure-context": "./src/shortcut/shortcut-disclosure-context.tsx",
     "./shortcut/shortcut-provider": "./src/shortcut/shortcut-provider.tsx",
     "./shortcut/shortcut-store": "./src/shortcut/shortcut-store.ts",
     "./shortcut/shortcut-target": "./src/shortcut/shortcut-target.tsx",

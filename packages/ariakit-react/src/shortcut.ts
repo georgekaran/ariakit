@@ -16,6 +16,16 @@ export {
   useShortcutCommand,
 } from "@ariakit/react-components/shortcut/shortcut-command";
 export type { ShortcutGlyphs } from "@ariakit/react-components/shortcut/shortcut-context";
+export type {
+  ShortcutDisclosureOptions,
+  ShortcutDisclosureProps,
+} from "@ariakit/react-components/shortcut/shortcut-disclosure";
+export {
+  ShortcutDisclosure,
+  useShortcutDisclosure,
+} from "@ariakit/react-components/shortcut/shortcut-disclosure";
+export type { ShortcutDisclosureContextProps } from "@ariakit/react-components/shortcut/shortcut-disclosure-context";
+export { ShortcutDisclosureContext } from "@ariakit/react-components/shortcut/shortcut-disclosure-context";
 export { useShortcutContext } from "@ariakit/react-components/shortcut/shortcut-context";
 export type { ShortcutProviderProps } from "@ariakit/react-components/shortcut/shortcut-provider";
 export { ShortcutProvider } from "@ariakit/react-components/shortcut/shortcut-provider";
