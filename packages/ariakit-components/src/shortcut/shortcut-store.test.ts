@@ -290,3 +290,171 @@ test("notifies keystroke watchers even without commands", () => {
   pressKey("b", { ctrlKey: true });
   expect(seen).toEqual(["Control+B"]);
 });
+
+function makeTree() {
+  const outer = document.createElement("div");
+  const inner = document.createElement("div");
+  const leaf = document.createElement("button");
+  const outside = document.createElement("button");
+  inner.appendChild(leaf);
+  outer.appendChild(inner);
+  document.body.append(outer, outside);
+  return {
+    outer,
+    inner,
+    leaf,
+    outside,
+    cleanup: () => {
+      outer.remove();
+      outside.remove();
+    },
+  };
+}
+
+test("scoped commands only run while the event target is inside the target", () => {
+  const store = createShortcutStore();
+  const { outer, leaf, outside, cleanup } = makeTree();
+  let count = 0;
+  track(store.registerTarget({ element: outer }));
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+R",
+      target: outer,
+      onTrigger: () => count++,
+    }),
+  );
+  pressKey("r", { ctrlKey: true }, outside);
+  expect(count).toBe(0);
+  pressKey("r", { ctrlKey: true }, leaf);
+  expect(count).toBe(1);
+  cleanup();
+});
+
+test("the innermost scope with commands wins over outer and global", () => {
+  const store = createShortcutStore();
+  const { outer, inner, leaf, cleanup } = makeTree();
+  const calls: string[] = [];
+  track(store.registerTarget({ element: outer }));
+  track(store.registerTarget({ element: inner }));
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+R",
+      onTrigger: () => calls.push("global"),
+    }),
+  );
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+R",
+      target: outer,
+      onTrigger: () => calls.push("outer"),
+    }),
+  );
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+R",
+      target: inner,
+      onTrigger: () => calls.push("inner"),
+    }),
+  );
+  pressKey("r", { ctrlKey: true }, leaf);
+  expect(calls).toEqual(["inner"]);
+  // Outside every target, only the global command runs.
+  pressKey("r", { ctrlKey: true }, document.body);
+  expect(calls).toEqual(["inner", "global"]);
+  cleanup();
+});
+
+test("outer shortcuts without inner competition still work from inside", () => {
+  const store = createShortcutStore();
+  const { outer, inner, leaf, cleanup } = makeTree();
+  let count = 0;
+  track(store.registerTarget({ element: outer }));
+  track(store.registerTarget({ element: inner }));
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+O",
+      target: outer,
+      onTrigger: () => count++,
+    }),
+  );
+  pressKey("o", { ctrlKey: true }, leaf);
+  expect(count).toBe(1);
+  cleanup();
+});
+
+test("a modal target cuts off outer targets but not global commands", () => {
+  const store = createShortcutStore();
+  const { outer, inner, leaf, cleanup } = makeTree();
+  const calls: string[] = [];
+  track(store.registerTarget({ element: outer }));
+  track(store.registerTarget({ element: inner, modal: true }));
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+R",
+      target: outer,
+      onTrigger: () => calls.push("outer"),
+    }),
+  );
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+S",
+      onTrigger: () => calls.push("global"),
+    }),
+  );
+  pressKey("r", { ctrlKey: true }, leaf);
+  expect(calls).toEqual([]); // outer command unreachable under the modal
+  pressKey("s", { ctrlKey: true }, leaf);
+  expect(calls).toEqual(["global"]); // target={null} escape hatch
+  cleanup();
+});
+
+test("a target getter returning null keeps the command inactive", () => {
+  const store = createShortcutStore();
+  let count = 0;
+  let element: Element | null = null;
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+G",
+      target: () => element,
+      onTrigger: () => count++,
+    }),
+  );
+  pressKey("g", { ctrlKey: true });
+  expect(count).toBe(0);
+  const { outer, leaf, cleanup } = makeTree();
+  track(store.registerTarget({ element: outer }));
+  element = outer;
+  pressKey("g", { ctrlKey: true }, leaf);
+  expect(count).toBe(1);
+  cleanup();
+});
+
+test("triggerCommands runs in-scope handler commands only", () => {
+  const store = createShortcutStore();
+  const { outer, leaf, outside, cleanup } = makeTree();
+  const calls: string[] = [];
+  const button = document.createElement("button");
+  document.body.appendChild(button);
+  button.addEventListener("click", () => calls.push("element-click"));
+  track(store.registerTarget({ element: outer }));
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+B",
+      onTrigger: () => calls.push("global-handler"),
+    }),
+  );
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+B",
+      target: outer,
+      onTrigger: () => calls.push("scoped-handler"),
+    }),
+  );
+  track(store.registerCommand({ keyShortcuts: "Control+B", element: button }));
+  store.triggerCommands("Control+B", new MouseEvent("click"), leaf);
+  expect(calls).toEqual(["global-handler", "scoped-handler"]);
+  store.triggerCommands("Control+B", new MouseEvent("click"), outside);
+  expect(calls).toEqual(["global-handler", "scoped-handler", "global-handler"]);
+  button.remove();
+  cleanup();
+});

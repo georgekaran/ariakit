@@ -101,27 +101,90 @@ export function createShortcutStore(
   let refCount = 0;
 
   /**
-   * Runs the commands registered for the pressed shortcut. Scoped records stay
-   * inert until the scope chain lands.
+   * The stack of registered targets containing the reference element,
+   * innermost first, cut off after the innermost modal target so commands
+   * scoped outside a modal become unreachable.
    */
+  function getScopeChain(reference: Element | null) {
+    if (!reference) return [] as Element[];
+    const containing: Element[] = [];
+    for (const target of targets) {
+      const element = target.getElement();
+      if (!element) continue;
+      if (element === reference || element.contains(reference)) {
+        containing.push(element);
+      }
+    }
+    // Innermost first: an element contained by another sorts before it.
+    containing.sort((a, b) => (a.contains(b) ? 1 : b.contains(a) ? -1 : 0));
+    const modalIndex = containing.findIndex((element) =>
+      [...targets].some(
+        (target) => target.modal && target.getElement() === element,
+      ),
+    );
+    return modalIndex === -1 ? containing : containing.slice(0, modalIndex + 1);
+  }
+
+  /**
+   * The depth of the record's scope in the chain, `Infinity` for global
+   * commands, or `null` when the record is out of scope or inactive.
+   */
+  function getScopeIndex(
+    record: ShortcutStoreCommand,
+    chain: readonly Element[],
+  ) {
+    const { target } = record;
+    if (target == null) return Number.POSITIVE_INFINITY;
+    const element = typeof target === "function" ? target() : target;
+    if (!element) return null;
+    const index = chain.indexOf(element);
+    return index === -1 ? null : index;
+  }
+
+  /** Records that are reachable from the reference element, with their depth. */
+  function getScopedRecords(
+    records: readonly ShortcutStoreCommand[],
+    chain: readonly Element[],
+  ) {
+    const scoped: Array<{ record: ShortcutStoreCommand; index: number }> = [];
+    for (const record of records) {
+      const index = getScopeIndex(record, chain);
+      if (index === null) continue;
+      scoped.push({ record, index });
+    }
+    return scoped;
+  }
+
+  function getReference(target: EventTarget | null) {
+    return target instanceof Element ? target : null;
+  }
+
+  /** Runs the commands registered for the pressed shortcut. */
   function dispatch(text: string, event: KeyboardEvent) {
     if (isTextTarget(event.target) && !hasCommandModifier(text)) return;
 
     const records = shortcut.getState().commands.get(text);
     if (!records?.length) return;
 
-    const inScope = records.filter((record) => record.target == null);
-    if (!inScope.length) return;
+    const chain = getScopeChain(getReference(event.target));
+    const scoped = getScopedRecords(records, chain);
+    if (!scoped.length) return;
 
-    if (inScope.some(isVeto)) return;
+    if (scoped.some(({ record }) => isVeto(record))) return;
 
-    const eligible = inScope.filter(isEligible);
+    const eligible = scoped.filter(({ record }) => isEligible(record));
     if (!eligible.length) return;
+
+    // Only the innermost level with something to run competes.
+    const level = Math.min(...eligible.map(({ index }) => index));
+    const winning = eligible
+      .filter(({ index }) => index === level)
+      .map(({ record }) => record);
 
     event.preventDefault();
 
     let elementClicked = false;
-    for (const record of eligible) {
+    for (const record of winning) {
       if (record.onTrigger) {
         record.onTrigger(event);
         continue;
@@ -263,13 +326,38 @@ export function createShortcutStore(
     };
   };
 
+  const triggerCommands: ShortcutStoreFunctions["triggerCommands"] = (
+    keyShortcuts,
+    event,
+    reference,
+  ) => {
+    const shortcuts = resolveKeyShortcuts(keyShortcuts);
+    if (!shortcuts.length) return;
+    const chain = getScopeChain(reference ?? null);
+    const commands = shortcut.getState().commands;
+    for (const { text } of shortcuts) {
+      const records = commands.get(text);
+      if (!records?.length) continue;
+      const scoped = getScopedRecords(records, chain);
+      if (!scoped.length) continue;
+      if (scoped.some(({ record }) => isVeto(record))) continue;
+      // Every level runs: this bridges a click to headless registrations
+      // rather than competing for a single activation.
+      for (const { record } of scoped) {
+        if (record.disabled) continue;
+        if (!record.onTrigger) continue;
+        record.onTrigger(event);
+      }
+    }
+  };
+
   return {
     ...shortcut,
     registerCommand,
     registerTarget,
     getKeyShortcuts: (event) => getEventKeyShortcuts(event),
     subscribeKeystroke,
-    triggerCommands: () => {},
+    triggerCommands,
   };
 }
 
