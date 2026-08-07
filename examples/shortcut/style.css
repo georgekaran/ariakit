@@ -1,0 +1,11 @@
+@import url("../button/style.css");
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+}
+
+kbd {
+  opacity: 0.6;
+  margin-inline-start: 0.5rem;
+}
