@@ -1,11 +1,22 @@
 import { createStore } from "@ariakit/store";
 import type { Store, StoreProps } from "@ariakit/store";
+import { canUseDOM, isTextField } from "@ariakit/utils";
 import type { KeyboardEventLike } from "./utils.ts";
-import { getEventKeyShortcuts, resolveKeyShortcuts } from "./utils.ts";
+import {
+  fireShortcutClickEvent,
+  getEventKeyShortcuts,
+  resolveKeyShortcuts,
+} from "./utils.ts";
 
 interface ShortcutTargetRecord {
   getElement: () => Element | null;
   modal: boolean;
+}
+
+function warn(...args: unknown[]) {
+  if (process.env.NODE_ENV !== "production") {
+    console.warn(...args);
+  }
 }
 
 function toElementGetter(
@@ -14,6 +25,50 @@ function toElementGetter(
   if (value == null) return undefined;
   if (typeof value === "function") return value;
   return () => value;
+}
+
+/**
+ * Whether the event originated somewhere that consumes plain keystrokes as
+ * text, in which case only shortcuts carrying a command modifier may run.
+ */
+function isTextTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  if (isTextField(target)) return true;
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  return target.tagName === "SELECT";
+}
+
+function hasCommandModifier(text: string) {
+  return (
+    text.includes("Meta+") || text.includes("Control+") || text.includes("Alt+")
+  );
+}
+
+function isElementEnabled(element: Element) {
+  if (element.getAttribute("aria-disabled") === "true") return false;
+  return !(
+    "disabled" in element && (element as { disabled?: boolean }).disabled
+  );
+}
+
+/**
+ * Whether the record is a veto: a disabled registration with nothing to run.
+ * While one is in scope, its shortcut is fully unavailable.
+ */
+function isVeto(record: ShortcutStoreCommand) {
+  return !!record.disabled && !record.onTrigger && !record.getElement;
+}
+
+/**
+ * Whether the record can run right now. Element commands additionally require
+ * an element that is not disabled in the DOM.
+ */
+function isEligible(record: ShortcutStoreCommand) {
+  if (record.disabled) return false;
+  if (record.onTrigger) return true;
+  const element = record.getElement?.();
+  if (!element) return false;
+  return isElementEnabled(element);
 }
 
 /**
@@ -42,6 +97,81 @@ export function createShortcutStore(
   const targets = new Set<ShortcutTargetRecord>();
   const watchers = new Map<string, Set<(text: string) => void>>();
 
+  let listening: (() => void) | null = null;
+  let refCount = 0;
+
+  /**
+   * Runs the commands registered for the pressed shortcut. Scoped records stay
+   * inert until the scope chain lands.
+   */
+  function dispatch(text: string, event: KeyboardEvent) {
+    if (isTextTarget(event.target) && !hasCommandModifier(text)) return;
+
+    const records = shortcut.getState().commands.get(text);
+    if (!records?.length) return;
+
+    const inScope = records.filter((record) => record.target == null);
+    if (!inScope.length) return;
+
+    if (inScope.some(isVeto)) return;
+
+    const eligible = inScope.filter(isEligible);
+    if (!eligible.length) return;
+
+    event.preventDefault();
+
+    let elementClicked = false;
+    for (const record of eligible) {
+      if (record.onTrigger) {
+        record.onTrigger(event);
+        continue;
+      }
+      const element = record.getElement?.();
+      if (!element) continue;
+      if (elementClicked) {
+        warn(
+          `Multiple elements are registered for the "${text}" shortcut.`,
+          "Only the first registered element is activated.",
+          "See https://ariakit.com/components/shortcut",
+        );
+        continue;
+      }
+      elementClicked = true;
+      const { altKey, ctrlKey, metaKey, shiftKey } = event;
+      fireShortcutClickEvent(element, { altKey, ctrlKey, metaKey, shiftKey });
+    }
+  }
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    const text = getEventKeyShortcuts(event);
+    if (!text) return;
+    // Watchers reflect "pressed", not "handled", so they run before every
+    // guard below.
+    const callbacks = watchers.get(text);
+    if (callbacks) {
+      for (const callback of [...callbacks]) {
+        callback(text);
+      }
+    }
+    if (event.defaultPrevented) return;
+    if (event.isComposing) return;
+    dispatch(text, event);
+  };
+
+  const retainListener = () => {
+    refCount += 1;
+    if (listening || !canUseDOM) return;
+    document.addEventListener("keydown", onKeyDown);
+    listening = () => document.removeEventListener("keydown", onKeyDown);
+  };
+
+  const releaseListener = () => {
+    refCount -= 1;
+    if (refCount > 0) return;
+    listening?.();
+    listening = null;
+  };
+
   const registerCommand: ShortcutStoreFunctions["registerCommand"] = (
     options,
   ) => {
@@ -62,10 +192,12 @@ export function createShortcutStore(
       }
       return next;
     });
+    retainListener();
     let unregistered = false;
     return () => {
       if (unregistered) return;
       unregistered = true;
+      releaseListener();
       shortcut.setState("commands", (commands) => {
         const next = new Map(commands);
         for (const { text } of shortcuts) {
@@ -114,10 +246,12 @@ export function createShortcutStore(
       }
       callbacks.add(callback);
     }
+    retainListener();
     let unsubscribed = false;
     return () => {
       if (unsubscribed) return;
       unsubscribed = true;
+      releaseListener();
       for (const { text } of shortcuts) {
         const callbacks = watchers.get(text);
         if (!callbacks) continue;
