@@ -73,3 +73,39 @@ test("displayDisabled=false hides a disabled shortcut", () => {
   expect(testId("disabled-shown")).not.toHaveAttribute("hidden");
   expect(testId("disabled-hidden")).toHaveAttribute("hidden");
 });
+
+test("exposes aria-keyshortcuts and keeps the accessible name clean", () => {
+  const button = q.button("Bold");
+  expect(button).toHaveAttribute("aria-keyshortcuts", "Control+B");
+  // The Shortcut display inside the command is aria-hidden, so the name is
+  // exactly "Bold".
+  expect(q.button("Bold Control B")).not.toBeInTheDocument();
+});
+
+test("pressing the shortcut clicks the command element", async () => {
+  await press("b", q.button("anchor"), { ctrlKey: true });
+  expect(output("bold clicks").textContent).toBe("bold clicks: 1");
+});
+
+test("disabled commands drop aria-keyshortcuts and stop dispatch", async () => {
+  await click(q.button("disable bold"));
+  expect(q.button("Bold")).not.toHaveAttribute("aria-keyshortcuts");
+  await press("b", q.button("anchor"), { ctrlKey: true });
+  expect(output("bold clicks").textContent).toBe("bold clicks: 0");
+  await click(q.button("enable bold"));
+  await press("b", q.button("anchor"), { ctrlKey: true });
+  expect(output("bold clicks").textContent).toBe("bold clicks: 1");
+});
+
+test("clicking a command bridges to handler commands without recursion", async () => {
+  await click(q.button("Save"));
+  expect(output("saves").textContent).toBe("saves: 1");
+});
+
+test("pressing a shared shortcut runs the handler once", async () => {
+  await press("m", q.button("anchor"), { ctrlKey: true });
+  // The handler command runs directly. The element command's synthetic click
+  // is marked, so the Save button's bridge does not run the handler again —
+  // exactly one increment for one keypress.
+  expect(output("saves").textContent).toBe("saves: 1");
+});

@@ -1,13 +1,34 @@
-import { resolveKeyShortcuts } from "@ariakit/components/shortcut/utils";
-import { useEvent } from "@ariakit/react-utils";
-import type { RefObject } from "react";
-import { useContext, useEffect, useMemo } from "react";
 import {
+  isShortcutClickEvent,
+  resolveKeyShortcuts,
+} from "@ariakit/components/shortcut/utils";
+import {
+  createElement,
+  createHook,
+  forwardRef,
+  useEvent,
+  useMergeRefs,
+  useWrapElement,
+} from "@ariakit/react-utils";
+import type { Props } from "@ariakit/react-utils";
+import { disabledFromProps } from "@ariakit/utils";
+import type { ElementType, MouseEvent, RefObject } from "react";
+import { useContext, useEffect, useMemo, useRef } from "react";
+import { withDefaultButtonType } from "../button/utils.ts";
+import type { CommandOptions } from "../command/command.tsx";
+import { useCommand } from "../command/command.tsx";
+import {
+  ShortcutCommandContext,
   ShortcutDisclosureRegistryContext,
   ShortcutTargetContext,
   useShortcutContext,
 } from "./shortcut-context.tsx";
 import type { ShortcutStore } from "./shortcut-store.ts";
+import { useShortcutPlatform } from "./shortcut-store.ts";
+
+const TagName = "button" satisfies ElementType;
+type TagName = typeof TagName;
+type HTMLType = HTMLElementTagNameMap[TagName];
 
 /**
  * Normalizes the `target` option into the shape the core store expects.
@@ -110,3 +131,152 @@ export interface UseShortcutCommandOptions {
    */
   target?: RefObject<Element | null> | Element | null;
 }
+
+const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
+  function useShortcutCommandProps({
+    store: storeProp,
+    keyShortcuts,
+    onTrigger: onTriggerProp,
+    target,
+    ...props
+  }) {
+    const context = useShortcutContext();
+    const store = storeProp ?? context;
+    const ref = useRef<HTMLType>(null);
+    const disabled = disabledFromProps(props);
+    const platform = useShortcutPlatform();
+    const resolvedTarget = useResolvedTarget(target);
+    const hasTrigger = !!onTriggerProp;
+    const onTrigger = useEvent(onTriggerProp);
+    const registry = useContext(ShortcutDisclosureRegistryContext);
+
+    const texts = useMemo(
+      () =>
+        resolveKeyShortcuts(keyShortcuts, platform).map(
+          (shortcut) => shortcut.text,
+        ),
+      [keyShortcuts, platform],
+    );
+
+    useEffect(() => {
+      return store.registerCommand({
+        keyShortcuts,
+        disabled,
+        onTrigger: hasTrigger ? onTrigger : undefined,
+        element: () => ref.current,
+        target: resolvedTarget,
+      });
+    }, [store, keyShortcuts, disabled, hasTrigger, onTrigger, resolvedTarget]);
+
+    useEffect(() => {
+      if (!registry) return;
+      if (!texts.length) return;
+      return registry.register(texts);
+    }, [registry, texts]);
+
+    const onClickProp = props.onClick;
+
+    const onClick = useEvent((event: MouseEvent<HTMLType>) => {
+      onClickProp?.(event);
+      if (event.defaultPrevented) return;
+      if (disabled) return;
+      // A shortcut-dispatched click already ran this command, so bridging it
+      // again would double-trigger every handler for the same shortcut.
+      if (isShortcutClickEvent(event.nativeEvent)) return;
+      store.triggerCommands(
+        keyShortcuts,
+        event.nativeEvent,
+        event.currentTarget,
+      );
+    });
+
+    const commandContextValue = useMemo(
+      () => ({ keyShortcuts, disabled: !!disabled }),
+      [keyShortcuts, disabled],
+    );
+
+    props = useWrapElement(
+      props,
+      (element) => (
+        <ShortcutCommandContext.Provider value={commandContextValue}>
+          {element}
+        </ShortcutCommandContext.Provider>
+      ),
+      [commandContextValue],
+    );
+
+    props = {
+      "aria-keyshortcuts":
+        disabled || !texts.length ? undefined : texts.join(" "),
+      ...props,
+      ref: useMergeRefs(ref, props.ref),
+      onClick,
+    };
+
+    props = useCommand<TagName>(props);
+
+    return props;
+  },
+);
+
+/**
+ * Renders a button that's activated by its keyboard shortcut and exposes it
+ * through
+ * [`aria-keyshortcuts`](https://w3c.github.io/aria/#aria-keyshortcuts).
+ *
+ * Without an
+ * [`onTrigger`](https://ariakit.com/reference/shortcut-command#ontrigger)
+ * callback, pressing the shortcut clicks the element. With it, only the
+ * callback runs. Clicking the element also runs handler-only commands
+ * registered for the same shortcuts. While the command is disabled, the
+ * shortcut is unavailable and the attribute is removed.
+ * @see https://ariakit.com/components/shortcut
+ * @example
+ * ```jsx
+ * <ShortcutCommand keyShortcuts="mod+B" onClick={toggleBold}>
+ *   Bold <Shortcut />
+ * </ShortcutCommand>
+ * ```
+ */
+export const ShortcutCommand = forwardRef(function ShortcutCommand(
+  props: ShortcutCommandProps,
+) {
+  const htmlProps = useShortcutCommandProps(withDefaultButtonType(props));
+  return createElement(TagName, htmlProps);
+});
+
+export interface ShortcutCommandOptions<
+  T extends ElementType = TagName,
+> extends CommandOptions<T> {
+  /**
+   * Object returned by the
+   * [`useShortcutStore`](https://ariakit.com/reference/use-shortcut-store)
+   * hook. If not provided, the closest
+   * [`ShortcutProvider`](https://ariakit.com/reference/shortcut-provider)
+   * component's context will be used, falling back to a shared global store.
+   */
+  store?: ShortcutStore;
+  /**
+   * One or more space-separated shortcuts, such as `"mod+B"` or
+   * `"apple:Meta+Shift+T pc:Control+Alt+T"`. Each one is registered
+   * individually and all of them are exposed through `aria-keyshortcuts`.
+   */
+  keyShortcuts: string;
+  /**
+   * Called when the shortcut is pressed. When provided, the element is not
+   * clicked.
+   */
+  onTrigger?: (event: KeyboardEvent | MouseEvent) => void;
+  /**
+   * The focus scope this command belongs to. `undefined` inherits the closest
+   * [`ShortcutTarget`](https://ariakit.com/reference/shortcut-target), `null`
+   * opts out to the global scope, and a ref or element scopes the command to
+   * that element.
+   */
+  target?: RefObject<Element | null> | Element | null;
+}
+
+export type ShortcutCommandProps<T extends ElementType = TagName> = Props<
+  T,
+  ShortcutCommandOptions<T>
+>;

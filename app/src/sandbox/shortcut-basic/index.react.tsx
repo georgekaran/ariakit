@@ -1,5 +1,45 @@
-import { Shortcut, ShortcutProvider, useShortcutCommand } from "@ariakit/react";
+import {
+  Shortcut,
+  ShortcutCommand,
+  ShortcutProvider,
+  useShortcutCommand,
+} from "@ariakit/react";
 import { useState } from "react";
+
+function BoldButton() {
+  const [clicks, setClicks] = useState(0);
+  const [disabled, setDisabled] = useState(false);
+  return (
+    <>
+      <ShortcutCommand
+        keyShortcuts="Control+B"
+        disabled={disabled}
+        accessibleWhenDisabled
+        onClick={() => setClicks((clicks) => clicks + 1)}
+      >
+        Bold <Shortcut />
+      </ShortcutCommand>
+      <output>bold clicks: {clicks}</output>
+      <button onClick={() => setDisabled((disabled) => !disabled)}>
+        {disabled ? "enable" : "disable"} bold
+      </button>
+    </>
+  );
+}
+
+function SaveStatus() {
+  const [saves, setSaves] = useState(0);
+  useShortcutCommand({
+    keyShortcuts: "Control+M",
+    onTrigger: () => setSaves((saves) => saves + 1),
+  });
+  return (
+    <>
+      <output>saves: {saves}</output>
+      <ShortcutCommand keyShortcuts="Control+M">Save</ShortcutCommand>
+    </>
+  );
+}
 
 function DisabledShortcuts() {
   // Bare disabled registration: a veto record that marks Control+H disabled.
@@ -80,6 +120,8 @@ export default function Example() {
           data-testid="all"
         />
         <DisabledShortcuts />
+        <BoldButton />
+        <SaveStatus />
       </ShortcutProvider>
       <GlobalCounter />
     </>
