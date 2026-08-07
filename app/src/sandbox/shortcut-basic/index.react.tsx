@@ -1,5 +1,20 @@
-import { ShortcutProvider, useShortcutCommand } from "@ariakit/react";
+import { Shortcut, ShortcutProvider, useShortcutCommand } from "@ariakit/react";
 import { useState } from "react";
+
+function DisabledShortcuts() {
+  // Bare disabled registration: a veto record that marks Control+H disabled.
+  useShortcutCommand({ keyShortcuts: "Control+H", disabled: true });
+  return (
+    <>
+      <Shortcut keyShortcuts="Control+H" data-testid="disabled-shown" />
+      <Shortcut
+        keyShortcuts="Control+H"
+        displayDisabled={false}
+        data-testid="disabled-hidden"
+      />
+    </>
+  );
+}
 
 function ProviderCounter() {
   const [count, setCount] = useState(0);
@@ -49,9 +64,22 @@ export default function Example() {
       {/* Focusable press target: @ariakit/test's press() needs a pressable
           element, and document.body is not one. */}
       <button>anchor</button>
-      <ShortcutProvider>
+      <ShortcutProvider glyphs={{ Control: "⌃" }}>
         <ProviderCounter />
         <RemapCounter />
+        <Shortcut keyShortcuts="Control+K" data-testid="plain" />
+        <Shortcut
+          keyShortcuts="apple:Meta+K pc:Control+K"
+          platform="apple"
+          glyphs={{ "+": "", Meta: "⌘" }}
+          data-testid="apple"
+        />
+        <Shortcut
+          keyShortcuts="Control+K Control+J"
+          display="all"
+          data-testid="all"
+        />
+        <DisabledShortcuts />
       </ShortcutProvider>
       <GlobalCounter />
     </>

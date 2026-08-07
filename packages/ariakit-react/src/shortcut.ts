@@ -1,3 +1,11 @@
+export type {
+  ShortcutOptions,
+  ShortcutProps,
+} from "@ariakit/react-components/shortcut/shortcut";
+export {
+  Shortcut,
+  useShortcut,
+} from "@ariakit/react-components/shortcut/shortcut";
 export type { UseShortcutCommandOptions } from "@ariakit/react-components/shortcut/shortcut-command";
 export { useShortcutCommand } from "@ariakit/react-components/shortcut/shortcut-command";
 export type { ShortcutGlyphs } from "@ariakit/react-components/shortcut/shortcut-context";
