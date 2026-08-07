@@ -181,7 +181,9 @@ function parseShortcut(
     return null;
   }
 
-  const resolved = [...MODIFIERS.filter((modifier) => modifiers.has(modifier))];
+  const resolved: string[] = MODIFIERS.filter((modifier) =>
+    modifiers.has(modifier),
+  );
   resolved.push(keys[0]!);
   return { text: resolved.join("+"), keys: resolved };
 }
