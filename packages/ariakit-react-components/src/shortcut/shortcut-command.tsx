@@ -12,7 +12,13 @@ import {
 } from "@ariakit/react-utils";
 import type { Props } from "@ariakit/react-utils";
 import { disabledFromProps } from "@ariakit/utils";
-import type { ElementType, MouseEvent, RefObject } from "react";
+// Aliased so `MouseEvent` in the option signatures stays the DOM event the
+// core store dispatches, not React's synthetic one.
+import type {
+  ElementType,
+  MouseEvent as ReactMouseEvent,
+  RefObject,
+} from "react";
 import { useContext, useEffect, useMemo, useRef } from "react";
 import { withDefaultButtonType } from "../button/utils.ts";
 import type { CommandOptions } from "../command/command.tsx";
@@ -47,8 +53,10 @@ export function useResolvedTarget(
       if (!contextRef) return null;
       return () => contextRef.current;
     }
-    if (target instanceof Element) return target;
-    return () => target.current;
+    // Duck-typed instead of `instanceof Element` so this stays safe on the
+    // server, where the DOM constructor doesn't exist.
+    if ("current" in target) return () => target.current;
+    return target;
   }, [target, contextRef]);
 }
 
@@ -180,7 +188,7 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
 
     const onClickProp = props.onClick;
 
-    const onClick = useEvent((event: MouseEvent<HTMLType>) => {
+    const onClick = useEvent((event: ReactMouseEvent<HTMLType>) => {
       onClickProp?.(event);
       if (event.defaultPrevented) return;
       if (disabled) return;
@@ -195,7 +203,7 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     });
 
     const commandContextValue = useMemo(
-      () => ({ keyShortcuts, disabled: !!disabled }),
+      () => ({ keyShortcuts, disabled }),
       [keyShortcuts, disabled],
     );
 
