@@ -25,3 +25,11 @@ export type {
   ShortcutStoreState,
 } from "@ariakit/react-components/shortcut/shortcut-store";
 export { useShortcutStore } from "@ariakit/react-components/shortcut/shortcut-store";
+export type {
+  ShortcutTargetOptions,
+  ShortcutTargetProps,
+} from "@ariakit/react-components/shortcut/shortcut-target";
+export {
+  ShortcutTarget,
+  useShortcutTarget,
+} from "@ariakit/react-components/shortcut/shortcut-target";

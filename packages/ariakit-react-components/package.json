@@ -251,6 +251,7 @@
     "./shortcut/shortcut-context": "./src/shortcut/shortcut-context.tsx",
     "./shortcut/shortcut-provider": "./src/shortcut/shortcut-provider.tsx",
     "./shortcut/shortcut-store": "./src/shortcut/shortcut-store.ts",
+    "./shortcut/shortcut-target": "./src/shortcut/shortcut-target.tsx",
     "./store": "./src/store.ts",
     "./tab/tab": "./src/tab/tab.tsx",
     "./tab/tab-context": "./src/tab/tab-context.tsx",
