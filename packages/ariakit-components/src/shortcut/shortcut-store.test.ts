@@ -78,6 +78,15 @@ test("shares a single global store", () => {
   expect(getGlobalShortcutStore()).toBe(getGlobalShortcutStore());
 });
 
+test("creating a store without registering does not attach listeners", () => {
+  const addSpy = vi.spyOn(document, "addEventListener");
+  createShortcutStore();
+  expect(addSpy.mock.calls.filter(([type]) => type === "keydown")).toHaveLength(
+    0,
+  );
+  addSpy.mockRestore();
+});
+
 // Every store in this file attaches its own document listener while it has
 // registrations. Leaked registrations from one test would dispatch (and
 // preventDefault) during later tests, so every register call is tracked and
