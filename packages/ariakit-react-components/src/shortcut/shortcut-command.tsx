@@ -1,5 +1,6 @@
 import {
   isShortcutClickEvent,
+  isShortcutElementEnabled,
   resolveKeyShortcuts,
 } from "@ariakit/components/shortcut/utils";
 import {
@@ -8,6 +9,7 @@ import {
   forwardRef,
   useEvent,
   useMergeRefs,
+  useSafeLayoutEffect,
   useWrapElement,
 } from "@ariakit/react-utils";
 import type { Props } from "@ariakit/react-utils";
@@ -19,7 +21,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   RefObject,
 } from "react";
-import { useContext, useEffect, useMemo, useRef } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { withDefaultButtonType } from "../button/utils.ts";
 import type { CommandOptions } from "../command/command.tsx";
 import { useCommand } from "../command/command.tsx";
@@ -186,6 +188,35 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
       return register(texts);
     }, [register, texts]);
 
+    const [elementDisabled, setElementDisabled] = useState(false);
+
+    // A control disabled through an ancestor fieldset keeps `disabled === false`
+    // in props, so the attribute has to follow the DOM instead. The first render
+    // still emits the attribute, which keeps hydration markup identical to the
+    // server, and the layout effect corrects it before paint.
+    useSafeLayoutEffect(() => {
+      const element = ref.current;
+      if (!element) return;
+      const sync = () => setElementDisabled(!isShortcutElementEnabled(element));
+      sync();
+      const observer = new MutationObserver(sync);
+      observer.observe(element, {
+        attributes: true,
+        attributeFilter: ["disabled", "aria-disabled"],
+      });
+      // Any ancestor fieldset can disable the control, and nested fieldsets each
+      // toggle independently.
+      let fieldset = element.closest("fieldset");
+      while (fieldset) {
+        observer.observe(fieldset, {
+          attributes: true,
+          attributeFilter: ["disabled"],
+        });
+        fieldset = fieldset.parentElement?.closest("fieldset") ?? null;
+      }
+      return () => observer.disconnect();
+    }, []);
+
     const onClickProp = props.onClick;
 
     const onClick = useEvent((event: ReactMouseEvent<HTMLType>) => {
@@ -219,7 +250,9 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
 
     props = {
       "aria-keyshortcuts":
-        disabled || !texts.length ? undefined : texts.join(" "),
+        disabled || elementDisabled || !texts.length
+          ? undefined
+          : texts.join(" "),
       ...props,
       ref: useMergeRefs(ref, props.ref),
       onClick,

@@ -24,6 +24,10 @@ withFramework(import.meta.dirname, async ({ test }) => {
     await test
       .expect(page.locator("output", { hasText: "grouped clicks" }))
       .toHaveText("grouped clicks: 0");
+    // The shortcut is unavailable, so it must not be advertised either.
+    await test
+      .expect(q.button("Grouped"))
+      .not.toHaveAttribute("aria-keyshortcuts");
   });
 
   test("plain keys stay inert and modified keys dispatch", async ({
