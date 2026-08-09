@@ -7,16 +7,25 @@ import {
 import { useState } from "react";
 import "./style.css";
 
+interface PaletteCommandProps {
+  onTrigger: () => void;
+}
+
+// Rendered below the provider so this headless command and the Palette button
+// register on the same store. A hook called above the provider would fall back
+// to the global store instead, and clicking the button could not reach it.
+function PaletteCommand({ onTrigger }: PaletteCommandProps) {
+  useShortcutCommand({ keyShortcuts: "mod+K", onTrigger });
+  return null;
+}
+
 export default function Example() {
   const [message, setMessage] = useState("Press a shortcut or click a button");
-  useShortcutCommand({
-    keyShortcuts: "mod+K",
-    onTrigger: () => setMessage("Command palette opened"),
-  });
   return (
     <ShortcutProvider
       glyphs={{ apple: { Meta: "⌘", "+": "" }, Control: "Ctrl" }}
     >
+      <PaletteCommand onTrigger={() => setMessage("Command palette opened")} />
       <div className="toolbar">
         <ShortcutCommand
           className="button"

@@ -52,7 +52,23 @@ Commands are global by default. Inside a [`ShortcutTarget`](/reference/shortcut-
 
 ## Outside React
 
-`createShortcutStore` from `@ariakit/components` registers commands without React and returns an unregister function, and `getKeyShortcuts(event)` turns a keyboard event into normalized shortcut text such as `Meta+Shift+A`.
+`createShortcutStore` registers commands without React and returns a function that unregisters them, and `getKeyShortcuts(event)` turns a keyboard event into normalized shortcut text such as `Meta+Shift+A`.
+
+```ts
+import { createShortcutStore } from "@ariakit/components/shortcut/shortcut-store";
+
+const shortcut = createShortcutStore();
+
+const unregister = shortcut.registerCommand({
+  keyShortcuts: "mod+K",
+  onTrigger: () => openPalette(),
+});
+
+// Later, to remove the command and release the keydown listener:
+unregister();
+```
+
+Pass this store to [`ShortcutProvider`](/reference/shortcut-provider) to share one registry with React components. The provider reuses the store you pass rather than deriving a new one, so commands registered outside React and commands registered by descendants resolve against the same scopes.
 
 ## Related components
 
