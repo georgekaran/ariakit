@@ -85,3 +85,58 @@ test("marks synthetic shortcut clicks", () => {
   expect(isShortcutClickEvent(clickEvent!)).toBe(true);
   expect(isShortcutClickEvent(new MouseEvent("click"))).toBe(false);
 });
+
+test("deduplicates equivalent shortcut spellings", () => {
+  expect(resolveKeyShortcuts("Control+K ctrl+k", "pc")).toEqual([
+    { text: "Control+K", keys: ["Control", "K"] },
+  ]);
+  // `mod` collapses into an explicit declaration on the platform it resolves
+  // to, and stays separate on the other one.
+  expect(resolveKeyShortcuts("mod+K Control+K", "pc")).toHaveLength(1);
+  expect(resolveKeyShortcuts("mod+K Control+K", "apple")).toHaveLength(2);
+});
+
+test("ignores AltGr text composition", () => {
+  // Windows reports AltGr as Control with Alt while composing "€".
+  expect(
+    getEventKeyShortcuts({
+      key: "€",
+      code: "KeyE",
+      ctrlKey: true,
+      altKey: true,
+      getModifierState: (key) => key === "AltGraph",
+    }),
+  ).toBe(null);
+  // The same physical combination without AltGr stays a shortcut.
+  expect(
+    getEventKeyShortcuts({
+      key: "€",
+      code: "KeyE",
+      ctrlKey: true,
+      altKey: true,
+      getModifierState: () => false,
+    }),
+  ).toBe("Control+Alt+E");
+  // A plain letter under AltGr stays a shortcut, so layouts that report
+  // AltGraph for Control+Alt keep working.
+  expect(
+    getEventKeyShortcuts({
+      key: "k",
+      code: "KeyK",
+      ctrlKey: true,
+      altKey: true,
+      getModifierState: (key) => key === "AltGraph",
+    }),
+  ).toBe("Control+Alt+K");
+});
+
+test("keeps the character the layout produced", () => {
+  // AZERTY places the key labelled "A" at the QWERTY "Q" position, so the
+  // physical code must not override the letter the layout reported.
+  expect(getEventKeyShortcuts({ key: "a", code: "KeyQ", altKey: true })).toBe(
+    "Alt+A",
+  );
+  expect(
+    getEventKeyShortcuts({ key: "1", code: "Digit1", shiftKey: true }),
+  ).toBe("Shift+1");
+});

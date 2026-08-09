@@ -56,6 +56,24 @@ function DisabledShortcuts() {
   );
 }
 
+function FieldsetCommand() {
+  const [clicks, setClicks] = useState(0);
+  // A control disabled through an ancestor fieldset keeps `disabled === false`
+  // on its own property, so only `:disabled` reveals it.
+  return (
+    <fieldset disabled>
+      <legend>disabled group</legend>
+      <ShortcutCommand
+        keyShortcuts="Control+G"
+        onClick={() => setClicks((clicks) => clicks + 1)}
+      >
+        Grouped <Shortcut />
+      </ShortcutCommand>
+      <output>grouped clicks: {clicks}</output>
+    </fieldset>
+  );
+}
+
 function ProviderCounter() {
   const [count, setCount] = useState(0);
   useShortcutCommand({
@@ -121,6 +139,7 @@ export default function Example() {
         />
         <DisabledShortcuts />
         <BoldButton />
+        <FieldsetCommand />
         <SaveStatus />
       </ShortcutProvider>
       <GlobalCounter />

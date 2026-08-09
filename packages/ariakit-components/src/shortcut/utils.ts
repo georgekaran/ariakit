@@ -19,14 +19,20 @@ export interface KeyboardEventLike {
   key: string;
   /**
    * The [`KeyboardEvent.code`](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/code)
-   * value. Used as a layout-aware fallback when a modifier changes the
-   * character produced by the key.
+   * value. Used to recover the declared key when a modifier replaces the
+   * character the key produces.
    */
   code?: string;
   metaKey?: boolean;
   ctrlKey?: boolean;
   altKey?: boolean;
   shiftKey?: boolean;
+  /**
+   * The [`KeyboardEvent.getModifierState`](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/getModifierState)
+   * method. Used to tell AltGr text composition apart from a `Control+Alt`
+   * shortcut.
+   */
+  getModifierState?: (key: string) => boolean;
 }
 
 /**
@@ -94,6 +100,9 @@ const KEY_NAME_MAP = new Map(KEY_NAMES.map((key) => [key.toLowerCase(), key]));
 const PLATFORM_PREFIX = /^(apple|pc):/i;
 const KEY_CODE = /^Key([A-Z])$/;
 const DIGIT_CODE = /^Digit([0-9])$/;
+// A character the active layout produced on its own, rather than one a modifier
+// replaced. Used to decide when `code` may override `key`.
+const ASCII_ALNUM = /^[a-zA-Z0-9]$/;
 
 function warn(...args: unknown[]) {
   if (process.env.NODE_ENV !== "production") {
@@ -203,14 +212,21 @@ export function resolveKeyShortcuts(
   platform = getShortcutPlatform(),
 ): ResolvedShortcut[] {
   const shortcuts: ResolvedShortcut[] = [];
+  // Separate tokens can resolve to the same canonical text, through aliases
+  // ("Control+K ctrl+k"), through `mod` next to an explicit declaration, or
+  // through platform prefixes that both apply. Keeping duplicates would
+  // register one command several times under the same key, so one keydown would
+  // run it several times. Each canonical text is kept once.
+  const seen = new Set<string>();
   // Empty tokens come from padding and are not authoring mistakes, so they are
   // dropped before parsing rather than warned about.
   for (const token of keyShortcuts.split(/\s+/)) {
     if (!token) continue;
     const shortcut = parseShortcut(token, platform, keyShortcuts);
-    if (shortcut) {
-      shortcuts.push(shortcut);
-    }
+    if (!shortcut) continue;
+    if (seen.has(shortcut.text)) continue;
+    seen.add(shortcut.text);
+    shortcuts.push(shortcut);
   }
   return shortcuts;
 }
@@ -227,6 +243,22 @@ export function getEventKeyShortcuts(event: KeyboardEventLike): string | null {
   if (!key) return null;
   if (MODIFIER_EVENT_KEYS.has(key)) return null;
 
+  // Windows reports AltGr as Control together with Alt while it composes
+  // characters such as "€". Those keydowns carry text, not a command, so
+  // matching them would let ordinary international typing run shortcuts. The
+  // text-field guard cannot catch this, because the text does carry a command
+  // modifier. A composed character is never a plain letter or digit, which
+  // keeps a real Control+Alt+K shortcut working on the same layouts.
+  if (
+    altKey &&
+    ctrlKey &&
+    key.length === 1 &&
+    !ASCII_ALNUM.test(key) &&
+    event.getModifierState?.("AltGraph")
+  ) {
+    return null;
+  }
+
   let base = key;
   if (base === " ") {
     base = "Space";
@@ -234,16 +266,19 @@ export function getEventKeyShortcuts(event: KeyboardEventLike): string | null {
     base = "Plus";
   }
 
-  if (code) {
-    // Option on macOS turns letters into symbols ("Option+L" produces "¬"), and
-    // Shift turns digits into punctuation ("Shift+1" produces "!"). The
-    // physical code recovers the key the author actually declared.
+  // Recover the declared key from the physical code only when a modifier
+  // replaced the character: Option on macOS turns letters into symbols
+  // ("Option+L" produces "¬") and Shift turns digits into punctuation
+  // ("Shift+1" produces "!"). When the layout still reports a letter or digit,
+  // that character wins, because `code` names a physical position rather than
+  // the character produced: on AZERTY the key labelled "A" reports `KeyQ`.
+  if (code && !(base.length === 1 && ASCII_ALNUM.test(base))) {
     const letter = altKey ? code.match(KEY_CODE) : null;
     if (letter) {
       base = letter[1]!;
     } else {
       const digit = code.match(DIGIT_CODE);
-      if (digit && (altKey || (shiftKey && base !== digit[1]))) {
+      if (digit && (altKey || shiftKey)) {
         base = digit[1]!;
       }
     }

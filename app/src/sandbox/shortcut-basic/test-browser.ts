@@ -15,6 +15,17 @@ withFramework(import.meta.dirname, async ({ test }) => {
       .toHaveAttribute("aria-keyshortcuts", "Control+B");
   });
 
+  test("a command disabled by an ancestor fieldset never activates", async ({
+    page,
+    q,
+  }) => {
+    await q.button("anchor").focus();
+    await page.keyboard.press("Control+g");
+    await test
+      .expect(page.locator("output", { hasText: "grouped clicks" }))
+      .toHaveText("grouped clicks: 0");
+  });
+
   test("plain keys stay inert and modified keys dispatch", async ({
     page,
     q,

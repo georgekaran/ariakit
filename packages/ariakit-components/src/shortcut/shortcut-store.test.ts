@@ -467,3 +467,75 @@ test("triggerCommands runs in-scope handler commands only", () => {
   button.remove();
   cleanup();
 });
+
+test("registers equivalent spellings once", () => {
+  const store = createShortcutStore();
+  let triggered = 0;
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+K ctrl+k",
+      onTrigger: () => triggered++,
+    }),
+  );
+  expect(getRecords(store, "Control+K")).toHaveLength(1);
+  pressKey("k", { ctrlKey: true });
+  expect(triggered).toBe(1);
+});
+
+test("a disabled element blocks its command even with onTrigger", () => {
+  const store = createShortcutStore();
+  const button = document.createElement("button");
+  button.disabled = true;
+  document.body.appendChild(button);
+  let triggered = 0;
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+E",
+      element: button,
+      onTrigger: () => triggered++,
+    }),
+  );
+  const event = pressKey("e", { ctrlKey: true });
+  expect(triggered).toBe(0);
+  expect(event.defaultPrevented).toBe(false);
+  button.remove();
+});
+
+test("reuses a supplied shortcut store instead of deriving one", () => {
+  const parent = createShortcutStore();
+  let globalTriggered = 0;
+  track(
+    parent.registerCommand({
+      keyShortcuts: "Control+K",
+      onTrigger: () => globalTriggered++,
+    }),
+  );
+  // This is what <ShortcutProvider store={parent}> does.
+  const child = createShortcutStore({ store: parent });
+  expect(child).toBe(parent);
+  // Registering through the provider must not discard what the original store
+  // already holds.
+  expect(getRecords(parent, "Control+K")).toHaveLength(1);
+
+  const scope = document.createElement("div");
+  const input = document.createElement("input");
+  scope.appendChild(input);
+  document.body.appendChild(scope);
+  track(child.registerTarget({ element: scope }));
+  let scopedTriggered = 0;
+  track(
+    child.registerCommand({
+      keyShortcuts: "Control+K",
+      onTrigger: () => scopedTriggered++,
+      target: scope,
+    }),
+  );
+  expect(getRecords(parent, "Control+K")).toHaveLength(2);
+
+  pressKey("k", { ctrlKey: true }, input);
+  // One registry and one target set, so the more specific scoped command wins
+  // instead of the winner depending on listener order.
+  expect(scopedTriggered).toBe(1);
+  expect(globalTriggered).toBe(0);
+  scope.remove();
+});

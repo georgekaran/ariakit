@@ -46,6 +46,14 @@ function hasCommandModifier(text: string) {
 
 function isElementEnabled(element: Element) {
   if (element.getAttribute("aria-disabled") === "true") return false;
+  // `:disabled` also matches a control disabled by an ancestor fieldset, which
+  // the element's own `disabled` property never reflects. Engines that don't
+  // support the selector fall through to the property check below.
+  try {
+    if (element.matches(":disabled")) return false;
+  } catch {
+    // Unsupported selector: rely on the property check.
+  }
   return !(
     "disabled" in element && (element as { disabled?: boolean }).disabled
   );
@@ -60,15 +68,29 @@ function isVeto(record: ShortcutStoreCommand) {
 }
 
 /**
- * Whether the record can run right now. Element commands additionally require
- * an element that is not disabled in the DOM.
+ * Whether the record can run right now. A command associated with an element
+ * requires that element to be present and enabled, even when the command also
+ * has `onTrigger`. Otherwise a disabled control would still run its handler and
+ * swallow the keydown.
  */
 function isEligible(record: ShortcutStoreCommand) {
   if (record.disabled) return false;
-  if (record.onTrigger) return true;
-  const element = record.getElement?.();
-  if (!element) return false;
-  return isElementEnabled(element);
+  if (record.getElement) {
+    const element = record.getElement();
+    if (!element) return false;
+    return isElementEnabled(element);
+  }
+  return !!record.onTrigger;
+}
+
+/** Whether the value is already a shortcut store, with its own runtime. */
+function isShortcutStore(store: unknown): store is ShortcutStore {
+  if (!store) return false;
+  const candidate = store as Partial<ShortcutStore>;
+  return (
+    typeof candidate.registerCommand === "function" &&
+    typeof candidate.registerTarget === "function"
+  );
 }
 
 /**
@@ -88,6 +110,16 @@ function isEligible(record: ShortcutStoreCommand) {
 export function createShortcutStore(
   props: ShortcutStoreProps = {},
 ): ShortcutStore {
+  // A shortcut store owns runtime that store state cannot carry: the target
+  // registry, the keystroke watchers, and the document keydown listener.
+  // Deriving a second store from an existing one would split that runtime, so
+  // each store would resolve scopes against its own target registry and the
+  // first listener to run would decide the winner. The derived store would also
+  // rebuild the whole command map from its own snapshot on the first
+  // registration, discarding everything registered on the original. Reusing the
+  // supplied store keeps one registry, one target set, and one listener.
+  if (isShortcutStore(props.store)) return props.store;
+
   const initialState: ShortcutStoreState = { commands: new Map() };
   // Omit an undefined parent so createStore keeps its zero-parent fast path.
   const shortcut = props.store
