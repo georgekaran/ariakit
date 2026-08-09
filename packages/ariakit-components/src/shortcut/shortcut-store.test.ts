@@ -539,3 +539,44 @@ test("reuses a supplied shortcut store instead of deriving one", () => {
   expect(globalTriggered).toBe(0);
   scope.remove();
 });
+
+test("the click bridge skips handlers attached to disabled elements", () => {
+  const store = createShortcutStore();
+  // Directly disabled rather than disabled through a fieldset: happy-dom does
+  // not implement `:disabled` inheritance, so the fieldset variant is covered
+  // by the shortcut-basic browser test instead.
+  const attached = document.createElement("button");
+  attached.disabled = true;
+  const enabled = document.createElement("button");
+  document.body.append(attached, enabled);
+
+  let attachedTriggered = 0;
+  let headlessTriggered = 0;
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+G",
+      element: attached,
+      onTrigger: () => attachedTriggered++,
+    }),
+  );
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+G",
+      onTrigger: () => headlessTriggered++,
+    }),
+  );
+
+  // Clicking the enabled command bridges to every in-scope handler command.
+  store.triggerCommands("Control+G", new MouseEvent("click"), enabled);
+  expect(headlessTriggered).toBe(1);
+  // The handler attached to the disabled control must stay unreachable.
+  expect(attachedTriggered).toBe(0);
+
+  attached.disabled = false;
+  store.triggerCommands("Control+G", new MouseEvent("click"), enabled);
+  expect(attachedTriggered).toBe(1);
+  expect(headlessTriggered).toBe(2);
+
+  attached.remove();
+  enabled.remove();
+});

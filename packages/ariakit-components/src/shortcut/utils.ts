@@ -1,4 +1,4 @@
-import { isApple } from "@ariakit/utils";
+import { canUseDOM, isApple } from "@ariakit/utils";
 
 /**
  * The platform a shortcut is resolved for. Apple devices use the `Meta` key
@@ -108,6 +108,60 @@ function warn(...args: unknown[]) {
   if (process.env.NODE_ENV !== "production") {
     console.warn(...args);
   }
+}
+
+interface KeyboardLayoutSource {
+  getLayoutMap?: () => Promise<ReadonlyMap<string, string>>;
+}
+
+let layoutMap: ReadonlyMap<string, string> | null = null;
+let layoutMapRequested = false;
+
+/**
+ * Loads the keyboard layout map once, so a physical code can be resolved to the
+ * character the active layout assigns to it.
+ *
+ * `navigator.keyboard` exists on Chromium only and `getLayoutMap` is
+ * asynchronous, so the map can only improve keystrokes that arrive after it
+ * resolves. Everything else keeps working through the physical-code fallback,
+ * which is why the map is an enhancement rather than a requirement.
+ */
+function requestLayoutMap() {
+  if (layoutMapRequested) return;
+  layoutMapRequested = true;
+  if (!canUseDOM) return;
+  const keyboard = (
+    navigator as Navigator & { keyboard?: KeyboardLayoutSource }
+  ).keyboard;
+  if (typeof keyboard?.getLayoutMap !== "function") return;
+  keyboard
+    .getLayoutMap()
+    .then((map) => {
+      layoutMap = map;
+    })
+    .catch(() => {
+      // The map stays unavailable and the fallback keeps resolving events.
+    });
+}
+
+/**
+ * Whether the element can be activated by a shortcut right now.
+ *
+ * A control disabled through an ancestor `fieldset` still reports `disabled ===
+ * false` on its own property, so the `:disabled` selector is consulted too.
+ * @example
+ * if (!isShortcutElementEnabled(element)) return;
+ */
+export function isShortcutElementEnabled(element: Element) {
+  if (element.getAttribute("aria-disabled") === "true") return false;
+  try {
+    if (element.matches(":disabled")) return false;
+  } catch {
+    // Unsupported selector: rely on the property check below.
+  }
+  return !(
+    "disabled" in element && (element as { disabled?: boolean }).disabled
+  );
 }
 
 /**
@@ -243,6 +297,8 @@ export function getEventKeyShortcuts(event: KeyboardEventLike): string | null {
   if (!key) return null;
   if (MODIFIER_EVENT_KEYS.has(key)) return null;
 
+  requestLayoutMap();
+
   // Windows reports AltGr as Control together with Alt while it composes
   // characters such as "€". Those keydowns carry text, not a command, so
   // matching them would let ordinary international typing run shortcuts. The
@@ -275,7 +331,11 @@ export function getEventKeyShortcuts(event: KeyboardEventLike): string | null {
   if (code && !(base.length === 1 && ASCII_ALNUM.test(base))) {
     const letter = altKey ? code.match(KEY_CODE) : null;
     if (letter) {
-      base = letter[1]!;
+      // `code` names a physical position, so prefer the character the active
+      // layout assigns to that position when the browser can report it. Without
+      // the map, the QWERTY letter in the code is the only thing available.
+      const mapped = layoutMap?.get(code);
+      base = mapped && ASCII_ALNUM.test(mapped) ? mapped : letter[1]!;
     } else {
       const digit = code.match(DIGIT_CODE);
       if (digit && (altKey || shiftKey)) {

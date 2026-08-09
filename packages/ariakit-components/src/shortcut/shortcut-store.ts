@@ -5,6 +5,7 @@ import type { KeyboardEventLike } from "./utils.ts";
 import {
   fireShortcutClickEvent,
   getEventKeyShortcuts,
+  isShortcutElementEnabled,
   resolveKeyShortcuts,
 } from "./utils.ts";
 
@@ -44,21 +45,6 @@ function hasCommandModifier(text: string) {
   );
 }
 
-function isElementEnabled(element: Element) {
-  if (element.getAttribute("aria-disabled") === "true") return false;
-  // `:disabled` also matches a control disabled by an ancestor fieldset, which
-  // the element's own `disabled` property never reflects. Engines that don't
-  // support the selector fall through to the property check below.
-  try {
-    if (element.matches(":disabled")) return false;
-  } catch {
-    // Unsupported selector: rely on the property check.
-  }
-  return !(
-    "disabled" in element && (element as { disabled?: boolean }).disabled
-  );
-}
-
 /**
  * Whether the record is a veto: a disabled registration with nothing to run.
  * While one is in scope, its shortcut is fully unavailable.
@@ -78,7 +64,7 @@ function isEligible(record: ShortcutStoreCommand) {
   if (record.getElement) {
     const element = record.getElement();
     if (!element) return false;
-    return isElementEnabled(element);
+    return isShortcutElementEnabled(element);
   }
   return !!record.onTrigger;
 }
@@ -374,10 +360,12 @@ export function createShortcutStore(
       if (!scoped.length) continue;
       if (scoped.some(({ record }) => isVeto(record))) continue;
       // Every level runs: this bridges a click to headless registrations
-      // rather than competing for a single activation.
+      // rather than competing for a single activation. Eligibility is checked
+      // the same way as keyboard dispatch, so a handler attached to a disabled
+      // element cannot be reached through another command's click either.
       for (const { record } of scoped) {
-        if (record.disabled) continue;
         if (!record.onTrigger) continue;
+        if (!isEligible(record)) continue;
         record.onTrigger(event);
       }
     }
