@@ -50,6 +50,9 @@ export const useShortcutDisclosure = createHook<
     return () => {
       window.clearTimeout(timeout);
       unsubscribe();
+      // Clearing the pending timeout would otherwise strand `active` when the
+      // store or the resolved shortcuts change during the flash.
+      setActive(false);
     };
   }, [store, value]);
 

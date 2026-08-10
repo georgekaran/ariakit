@@ -3,6 +3,7 @@ import {
   isShortcutElementEnabled,
   resolveKeyShortcuts,
 } from "@ariakit/components/shortcut/utils";
+import { useStoreState } from "@ariakit/react-store";
 import {
   createElement,
   createHook,
@@ -188,6 +189,22 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
       return register(texts);
     }, [register, texts]);
 
+    // `aria-keyshortcuts` must only describe shortcuts that are actually
+    // available, so a shortcut vetoed elsewhere in the same store is dropped.
+    // Joined into a string so the selector result stays referentially stable.
+    const availableKeyShortcuts = useStoreState(store, (state) =>
+      texts
+        .filter((text) => {
+          const records = state.commands.get(text);
+          if (!records?.length) return true;
+          return !records.some(
+            (record) =>
+              record.disabled && !record.onTrigger && !record.getElement,
+          );
+        })
+        .join(" "),
+    );
+
     const [elementDisabled, setElementDisabled] = useState(false);
 
     // A control disabled through an ancestor fieldset keeps `disabled === false`
@@ -233,9 +250,11 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
       );
     });
 
+    // A nested `Shortcut` must see the same availability the attribute uses, so
+    // `displayDisabled={false}` hides it inside a disabled fieldset too.
     const commandContextValue = useMemo(
-      () => ({ keyShortcuts, disabled }),
-      [keyShortcuts, disabled],
+      () => ({ keyShortcuts, disabled: disabled || elementDisabled }),
+      [keyShortcuts, disabled, elementDisabled],
     );
 
     props = useWrapElement(
@@ -250,9 +269,9 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
 
     props = {
       "aria-keyshortcuts":
-        disabled || elementDisabled || !texts.length
+        disabled || elementDisabled || !availableKeyShortcuts
           ? undefined
-          : texts.join(" "),
+          : availableKeyShortcuts,
       ...props,
       ref: useMergeRefs(ref, props.ref),
       onClick,

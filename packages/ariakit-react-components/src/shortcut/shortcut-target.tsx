@@ -9,6 +9,7 @@ import type { Options, Props } from "@ariakit/react-utils";
 import type { ElementType } from "react";
 import { useEffect, useRef } from "react";
 import {
+  ShortcutScopedContextProvider,
   ShortcutTargetContext,
   useShortcutContext,
 } from "./shortcut-context.tsx";
@@ -39,14 +40,19 @@ export const useShortcutTarget = createHook<TagName, ShortcutTargetOptions>(
       return store.registerTarget({ element: () => ref.current, modal });
     }, [store, modal]);
 
+    // The target registers on the resolved store, so descendants must resolve
+    // the same one. Without this, an explicit `store` would put the target and
+    // its commands in different registries and the commands would never run.
     props = useWrapElement(
       props,
       (element) => (
-        <ShortcutTargetContext.Provider value={ref}>
-          {element}
-        </ShortcutTargetContext.Provider>
+        <ShortcutScopedContextProvider value={store}>
+          <ShortcutTargetContext.Provider value={ref}>
+            {element}
+          </ShortcutTargetContext.Provider>
+        </ShortcutScopedContextProvider>
       ),
-      [],
+      [store],
     );
 
     props = {
