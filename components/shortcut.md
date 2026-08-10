@@ -24,11 +24,11 @@ useShortcutCommand()
 
 <ShortcutProvider>
   <ShortcutTarget>
-    <ShortcutCommand>
-      <Shortcut />
-    </ShortcutCommand>
     <ShortcutDisclosureContext>
       <ShortcutDisclosure />
+      <ShortcutCommand>
+        <Shortcut />
+      </ShortcutCommand>
     </ShortcutDisclosureContext>
   </ShortcutTarget>
 </ShortcutProvider>
