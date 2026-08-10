@@ -1,12 +1,20 @@
 import { createStore } from "@ariakit/store";
 import type { Store, StoreProps } from "@ariakit/store";
-import { canUseDOM, isTextField } from "@ariakit/utils";
+import {
+  addGlobalEventListener,
+  canUseDOM,
+  isElement,
+  isTextField,
+} from "@ariakit/utils";
 import type { KeyboardEventLike } from "./utils.ts";
 import {
   fireShortcutClickEvent,
   getEventKeyShortcuts,
   isShortcutElementEnabled,
+  markShortcutHandled,
+  preloadShortcutLayoutMap,
   resolveKeyShortcuts,
+  wasShortcutHandled,
 } from "./utils.ts";
 
 interface ShortcutTargetRecord {
@@ -33,7 +41,9 @@ function toElementGetter(
  * text, in which case only shortcuts carrying a command modifier may run.
  */
 function isTextTarget(target: EventTarget | null) {
-  if (!(target instanceof Element)) return false;
+  // `isElement` is realm-agnostic, so targets coming from a same-origin frame
+  // are not rejected for belonging to another realm.
+  if (!isElement(target)) return false;
   if (isTextField(target)) return true;
   if (target instanceof HTMLElement && target.isContentEditable) return true;
   return target.tagName === "SELECT";
@@ -106,6 +116,10 @@ export function createShortcutStore(
   // supplied store keeps one registry, one target set, and one listener.
   if (isShortcutStore(props.store)) return props.store;
 
+  // Start resolving the keyboard layout now, so the map is ready long before a
+  // keystroke can arrive rather than being requested by the first event.
+  preloadShortcutLayoutMap();
+
   const initialState: ShortcutStoreState = { commands: new Map() };
   // Omit an undefined parent so createStore keeps its zero-parent fast path.
   const shortcut = props.store
@@ -174,7 +188,7 @@ export function createShortcutStore(
   }
 
   function getReference(target: EventTarget | null) {
-    return target instanceof Element ? target : null;
+    return isElement(target) ? target : null;
   }
 
   /** Runs the commands registered for the pressed shortcut. */
@@ -200,6 +214,9 @@ export function createShortcutStore(
       .map(({ record }) => record);
 
     event.preventDefault();
+    // Record that a shortcut store handled this event, so sibling stores can
+    // tell it apart from a default prevented by unrelated code.
+    markShortcutHandled(event);
 
     let elementClicked = false;
     for (const record of winning) {
@@ -234,7 +251,11 @@ export function createShortcutStore(
         callback(text);
       }
     }
-    if (event.defaultPrevented) return;
+    // A default prevented by unrelated code still means the event is spoken
+    // for. A default prevented by another shortcut store does not: stores own
+    // separate registries, so each one resolves its own commands and the
+    // outcome never depends on which listener was installed first.
+    if (event.defaultPrevented && !wasShortcutHandled(event)) return;
     if (event.isComposing) return;
     dispatch(text, event);
   };
@@ -242,8 +263,10 @@ export function createShortcutStore(
   const retainListener = () => {
     refCount += 1;
     if (listening || !canUseDOM) return;
-    document.addEventListener("keydown", onKeyDown);
-    listening = () => document.removeEventListener("keydown", onKeyDown);
+    // Listens on child frames too, so a command rendered into a same-origin
+    // iframe portal still receives its keystrokes. Stays on the bubble phase so
+    // components closer to the event keep the chance to handle the key first.
+    listening = addGlobalEventListener("keydown", onKeyDown);
   };
 
   const releaseListener = () => {

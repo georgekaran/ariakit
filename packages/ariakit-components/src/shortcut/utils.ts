@@ -118,15 +118,20 @@ let layoutMap: ReadonlyMap<string, string> | null = null;
 let layoutMapRequested = false;
 
 /**
- * Loads the keyboard layout map once, so a physical code can be resolved to the
- * character the active layout assigns to it.
+ * Starts loading the keyboard layout map, so a physical code can be resolved to
+ * the character the active layout assigns to it.
  *
- * `navigator.keyboard` exists on Chromium only and `getLayoutMap` is
- * asynchronous, so the map can only improve keystrokes that arrive after it
- * resolves. Everything else keeps working through the physical-code fallback,
- * which is why the map is an enhancement rather than a requirement.
+ * Call this as early as a shortcut can be registered. `getLayoutMap` is
+ * asynchronous, so requesting it only when the first keystroke arrives would
+ * leave that keystroke resolving through the physical code.
+ *
+ * `navigator.keyboard` exists on Chromium only, so on other engines the map
+ * never resolves and the physical-code fallback keeps handling every event.
+ * That is why the map is an enhancement and never a precondition for dispatch.
+ * @example
+ * preloadShortcutLayoutMap();
  */
-function requestLayoutMap() {
+export function preloadShortcutLayoutMap() {
   if (layoutMapRequested) return;
   layoutMapRequested = true;
   if (!canUseDOM) return;
@@ -297,7 +302,9 @@ export function getEventKeyShortcuts(event: KeyboardEventLike): string | null {
   if (!key) return null;
   if (MODIFIER_EVENT_KEYS.has(key)) return null;
 
-  requestLayoutMap();
+  // Normally already requested when the first store was created. This covers
+  // direct calls to this function with no store in play.
+  preloadShortcutLayoutMap();
 
   // Windows reports AltGr as Control together with Alt while it composes
   // characters such as "€". Those keydowns carry text, not a command, so
@@ -340,6 +347,14 @@ export function getEventKeyShortcuts(event: KeyboardEventLike): string | null {
       const digit = code.match(DIGIT_CODE);
       if (digit && (altKey || shiftKey)) {
         base = digit[1]!;
+      } else {
+        // Shift also replaces punctuation ("Shift+/" produces "?"). The layout
+        // map is the only reliable source here, since punctuation codes carry
+        // no character of their own.
+        const mapped = layoutMap?.get(code);
+        if (mapped && mapped.length === 1) {
+          base = mapped;
+        }
       }
     }
   }
@@ -355,6 +370,27 @@ export function getEventKeyShortcuts(event: KeyboardEventLike): string | null {
   if (shiftKey) modifiers.push("Shift");
   modifiers.push(base);
   return modifiers.join("+");
+}
+
+const shortcutHandledEvents = new WeakSet<Event>();
+
+/**
+ * Marks a keyboard event as handled by a shortcut store, so sibling stores can
+ * tell that default was prevented by a shortcut rather than by other code.
+ * @example
+ * markShortcutHandled(event);
+ */
+export function markShortcutHandled(event: Event) {
+  shortcutHandledEvents.add(event);
+}
+
+/**
+ * Checks whether a shortcut store already handled this event.
+ * @example
+ * if (event.defaultPrevented && !wasShortcutHandled(event)) return;
+ */
+export function wasShortcutHandled(event: Event) {
+  return shortcutHandledEvents.has(event);
 }
 
 const shortcutClickEvents = new WeakSet<Event>();

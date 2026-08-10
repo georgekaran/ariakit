@@ -28,18 +28,31 @@ afterEach(() => {
   vi.resetModules();
 });
 
-test("resolves a modifier-transformed key through the layout map", async () => {
-  const { getEventKeyShortcuts } = await loadUtils({
+test("resolves a modifier-transformed key on the first dispatch", async () => {
+  const { getEventKeyShortcuts, preloadShortcutLayoutMap } = await loadUtils({
     getLayoutMap: async () => new Map([["KeyQ", "a"]]),
   });
+  // Stores preload the map when they are created, long before a keystroke can
+  // arrive, so the very first event already resolves through the layout.
+  preloadShortcutLayoutMap();
+  await flush();
   // AZERTY: the key labelled "A" sits at the physical QWERTY "Q" position, and
   // Option replaced its character with a symbol.
-  const event = { key: "æ", code: "KeyQ", altKey: true };
-  // The first keystroke starts the request and still uses the fallback.
-  expect(getEventKeyShortcuts(event)).toBe("Alt+Q");
+  expect(getEventKeyShortcuts({ key: "æ", code: "KeyQ", altKey: true })).toBe(
+    "Alt+A",
+  );
+});
+
+test("recovers shifted punctuation through the layout map", async () => {
+  const { getEventKeyShortcuts, preloadShortcutLayoutMap } = await loadUtils({
+    getLayoutMap: async () => new Map([["Slash", "/"]]),
+  });
+  preloadShortcutLayoutMap();
   await flush();
-  // Once the map resolves, the layout character wins over the physical code.
-  expect(getEventKeyShortcuts(event)).toBe("Alt+A");
+  // Shift+/ produces "?", which carries no digit or letter to recover from.
+  expect(
+    getEventKeyShortcuts({ key: "?", code: "Slash", shiftKey: true }),
+  ).toBe("Shift+/");
 });
 
 test("falls back to the physical code when no layout map exists", async () => {

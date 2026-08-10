@@ -580,3 +580,65 @@ test("the click bridge skips handlers attached to disabled elements", () => {
   attached.remove();
   enabled.remove();
 });
+
+test("independent stores do not suppress each other", () => {
+  const first = createShortcutStore();
+  const second = createShortcutStore();
+  let firstRan = 0;
+  let secondRan = 0;
+  track(
+    first.registerCommand({
+      keyShortcuts: "Control+U",
+      onTrigger: () => firstRan++,
+    }),
+  );
+  track(
+    second.registerCommand({
+      keyShortcuts: "Control+U",
+      onTrigger: () => secondRan++,
+    }),
+  );
+  pressKey("u", { ctrlKey: true });
+  // Separate registries each resolve their own commands, so the outcome does
+  // not depend on which listener was installed first.
+  expect(firstRan).toBe(1);
+  expect(secondRan).toBe(1);
+});
+
+test("a store still yields to a default prevented by other code", () => {
+  const store = createShortcutStore();
+  let ran = 0;
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+Y",
+      onTrigger: () => ran++,
+    }),
+  );
+  const blocker = (event: Event) => event.preventDefault();
+  document.addEventListener("keydown", blocker, true);
+  pressKey("y", { ctrlKey: true });
+  document.removeEventListener("keydown", blocker, true);
+  expect(ran).toBe(0);
+});
+
+test("a non-matching store does not stop a later matching store", () => {
+  const quiet = createShortcutStore();
+  const matching = createShortcutStore();
+  let quietRan = 0;
+  let matchingRan = 0;
+  track(
+    quiet.registerCommand({
+      keyShortcuts: "Control+Q",
+      onTrigger: () => quietRan++,
+    }),
+  );
+  track(
+    matching.registerCommand({
+      keyShortcuts: "Control+W",
+      onTrigger: () => matchingRan++,
+    }),
+  );
+  pressKey("w", { ctrlKey: true });
+  expect(quietRan).toBe(0);
+  expect(matchingRan).toBe(1);
+});
