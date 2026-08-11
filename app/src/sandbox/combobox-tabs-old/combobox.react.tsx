@@ -203,6 +203,7 @@ export const ComboboxTab = React.forwardRef<HTMLDivElement, ComboboxTabProps>(
         ref={ref}
         id={id}
         role="tab"
+        focusOnHover={false}
         // Only the selected tab should be registered as a combobox item. The
         // remaining tabs will continue to be registered as tabs, but they won't
         // be part of the combobox widget's focus order when using the up and

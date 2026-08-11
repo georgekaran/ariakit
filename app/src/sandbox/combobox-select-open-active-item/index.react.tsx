@@ -34,6 +34,11 @@ function ClosedAlwaysVisibleSelect() {
       <Ariakit.ComboboxList alwaysVisible aria-label="Always-visible options">
         <Ariakit.ComboboxItem focusOnHover value="Explicit hover first" />
         <Ariakit.ComboboxItem focusOnHover value="Explicit hover second" />
+        <Ariakit.ComboboxItem
+          focusOnHover={() => true}
+          value="Callback hover"
+        />
+        <Ariakit.ComboboxItem value="Implicit hover" />
       </Ariakit.ComboboxList>
     </Ariakit.ComboboxProvider>
   );

@@ -133,4 +133,23 @@ withFramework(import.meta.dirname, async ({ test, query }) => {
 
     await test.expect(item).toHaveAttribute("data-active-item");
   });
+
+  test("honors a focusOnHover callback on a closed always-visible list", async ({
+    q,
+  }) => {
+    const item = q.option("Callback hover");
+    await item.hover();
+
+    await test.expect(item).toHaveAttribute("data-active-item");
+  });
+
+  // https://github.com/ariakit/ariakit/issues/6837
+  test("does not implicitly focus an item on a closed always-visible list", async ({
+    q,
+  }) => {
+    const item = q.option("Implicit hover");
+    await item.hover();
+
+    await test.expect(item).not.toHaveAttribute("data-active-item");
+  });
 });

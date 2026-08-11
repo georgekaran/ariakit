@@ -127,7 +127,7 @@ export default function Example() {
                 asChild
                 className="item"
               >
-                <ComboboxItem>
+                <ComboboxItem focusOnHover={false}>
                   <RadixSelect.ItemText>{label}</RadixSelect.ItemText>
                   <RadixSelect.ItemIndicator className="item-indicator">
                     <CheckIcon />

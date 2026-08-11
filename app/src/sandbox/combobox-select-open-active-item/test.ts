@@ -103,3 +103,18 @@ test("honors focusOnHover on a closed always-visible list", async () => {
 
   expect(item).toHaveAttribute("data-active-item");
 });
+
+test("honors a focusOnHover callback on a closed always-visible list", async () => {
+  const item = q.option.ensure("Callback hover");
+  await hover(item);
+
+  expect(item).toHaveAttribute("data-active-item");
+});
+
+// https://github.com/ariakit/ariakit/issues/6837
+test("does not implicitly focus an item on a closed always-visible list", async () => {
+  const item = q.option.ensure("Implicit hover");
+  await hover(item);
+
+  expect(item).not.toHaveAttribute("data-active-item");
+});

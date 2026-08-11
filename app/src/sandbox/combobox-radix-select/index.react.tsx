@@ -129,7 +129,7 @@ export default function Example() {
                 asChild
                 className="relative flex h-10 cursor-default scroll-my-1 items-center rounded px-7 text-black outline-none data-[active-item]:bg-violet-200 sm:h-9 sm:text-[15px]"
               >
-                <ComboboxItem>
+                <ComboboxItem focusOnHover={false}>
                   <RadixSelect.ItemText>{label}</RadixSelect.ItemText>
                   <RadixSelect.ItemIndicator className="absolute left-1.5">
                     <CheckIcon />
