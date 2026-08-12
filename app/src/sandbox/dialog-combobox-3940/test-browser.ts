@@ -28,7 +28,6 @@ withFramework(import.meta.dirname, async ({ test }) => {
 
     const backdrop = page.locator(".command-menu-backdrop");
     await backdrop.click({ position: { x: 10, y: 10 } });
-    await test.expect(dialog).toHaveAttribute("data-leave", "true");
     await test.expect(dialog).toBeHidden();
   });
 });

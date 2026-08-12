@@ -5,7 +5,6 @@ const labels = ["Popover first", "Tooltip first", "Trigger only"];
 withFramework(import.meta.dirname, async ({ test }) => {
   for (const label of labels) {
     test(`keeps the tooltip and popover stores separate (${label})`, async ({
-      page,
       q,
     }) => {
       const anchor = q.button(label);
@@ -21,8 +20,6 @@ withFramework(import.meta.dirname, async ({ test }) => {
 
       await anchor.click();
       await test.expect(popover).toBeHidden();
-
-      await page.mouse.move(0, 0);
     });
   }
 });
