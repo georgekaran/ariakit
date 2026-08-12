@@ -83,7 +83,7 @@ useComboboxContext()
 
 ### Styling the active item
 
-When browsing the list with a keyboard, the active item element will have a `data-active-item` attribute. In a standard input-backed combobox, hovering over an item with the mouse also makes it active by default. [`ComboboxSelect`](/reference/combobox-select) items use this implicit hover behavior while the popup is open. Set the [`focusOnHover`](/reference/combobox-item#focusonhover) prop to `false` to keep pointer movement from changing the active item. By default, moving the pointer away from the items clears the active item; set [`blurOnHoverEnd`](/reference/combobox-item#bluronhoverend) to `false` to preserve it:
+When browsing the list with a keyboard, the active item element will have a `data-active-item` attribute. While the combobox is open, hovering over an item with the mouse also makes it active by default. Hover focus remains disabled while the combobox is closed, including when the [`focusOnHover`](/reference/combobox-item#focusonhover) prop is explicitly set to `true` or a callback returns `true`. Set `focusOnHover` to `false` to keep pointer movement from changing the active item while the combobox is open. By default, moving the pointer away from the items clears the active item; set [`blurOnHoverEnd`](/reference/combobox-item#bluronhoverend) to `false` to preserve it:
 
 ```css
 .combobox-item[data-active-item] {

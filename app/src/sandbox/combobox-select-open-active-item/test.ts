@@ -96,19 +96,25 @@ for (const label of ["No-autofocus status", "Real-focus status"]) {
   });
 }
 
-// https://github.com/ariakit/ariakit/pull/6832
-test("honors focusOnHover on a closed always-visible list", async () => {
+// https://github.com/ariakit/ariakit/issues/7118
+test("does not honor focusOnHover true on a closed always-visible list", async () => {
+  const otherControl = q.button.ensure("Other control");
   const item = q.option.ensure("Explicit hover second");
+  await focus(otherControl);
   await hover(item);
 
-  expect(item).toHaveAttribute("data-active-item");
+  expect(item).not.toHaveAttribute("data-active-item");
+  expect(otherControl).toHaveFocus();
 });
 
-test("honors a focusOnHover callback on a closed always-visible list", async () => {
+test("does not honor a focusOnHover callback on a closed always-visible list", async () => {
+  const otherControl = q.button.ensure("Other control");
   const item = q.option.ensure("Callback hover");
+  await focus(otherControl);
   await hover(item);
 
-  expect(item).toHaveAttribute("data-active-item");
+  expect(item).not.toHaveAttribute("data-active-item");
+  expect(otherControl).toHaveFocus();
 });
 
 // https://github.com/ariakit/ariakit/issues/6837

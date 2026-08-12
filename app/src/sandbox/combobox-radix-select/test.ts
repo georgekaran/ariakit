@@ -83,16 +83,25 @@ test("search and select, then search again", async () => {
   expect(q.option("Russian")).toHaveAttribute("aria-selected", "true");
 });
 
-test("hover over option", async () => {
+test("hover over option and resume keyboard navigation", async () => {
   await click(q.combobox());
   await hover(q.option("German"));
   expect(q.combobox()).toHaveFocus();
   expect(q.option("German")).toHaveFocus();
   expect(q.option("German")).toHaveAttribute("data-active-item");
   await hover(document.body);
-  expect(q.option("German")).toHaveFocus();
-  expect(q.option("German")).toHaveAttribute("data-active-item");
+  expect(q.option("German")).not.toHaveAttribute("data-active-item");
   await press.ArrowDown();
-  expect(q.option("Spanish")).toHaveFocus();
-  expect(q.option("Spanish")).toHaveAttribute("data-active-item");
+  expect(q.option("English")).toHaveFocus();
+  expect(q.option("English")).toHaveAttribute("data-active-item");
+});
+
+test("hover and select an option with the keyboard", async () => {
+  await click(q.combobox());
+  await hover(q.option("German"));
+  await press.Enter();
+
+  expect(q.dialog()).not.toBeInTheDocument();
+  expect(q.combobox()).toHaveFocus();
+  expect(q.combobox()).toHaveTextContent("German");
 });

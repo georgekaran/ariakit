@@ -53,7 +53,7 @@ test("moving the pointer away clears the default active item", async () => {
   expect(combobox).toHaveFocus();
 });
 
-test("hover activates an item in a collapsed standalone list", async () => {
+test("hover does not activate an item in a collapsed standalone list", async () => {
   const combobox = q.combobox.ensure("Standalone fruit");
   const items = q.within(q.listbox.ensure("Standalone fruit options"));
   const banana = items.option.ensure("Banana");
@@ -61,10 +61,23 @@ test("hover activates an item in a collapsed standalone list", async () => {
   expect(combobox).toHaveAttribute("aria-expanded", "false");
   await hover(banana);
 
+  expect(banana).not.toHaveAttribute("data-active-item");
+  expect(combobox).not.toHaveAttribute("aria-activedescendant");
+  expect(combobox).not.toHaveFocus();
+});
+
+test("hover activates an item in an open standalone list", async () => {
+  const combobox = q.combobox.ensure("Standalone fruit");
+  const items = q.within(q.listbox.ensure("Standalone fruit options"));
+  const banana = items.option.ensure("Banana");
+
+  await click(combobox);
+  expect(combobox).toHaveAttribute("aria-expanded", "true");
+  await hover(banana);
+
   expect(banana).toHaveAttribute("data-active-item");
   expect(combobox).toHaveFocus();
   expect(combobox).toHaveAttribute("aria-activedescendant", banana.id);
-  expect(combobox).toHaveAttribute("aria-expanded", "false");
 });
 
 test("hover activates a real-focus item and keyboard navigation resumes DOM focus", async () => {

@@ -283,14 +283,15 @@ export const useComboboxItem = createHook<TagName, ComboboxItemOptions>(
       },
     });
 
-    const focusOnHoverProp = useBooleanEvent(
-      focusOnHover ?? (() => !selectMode || store.getState().open),
-    );
+    const focusOnHoverProp = useBooleanEvent(focusOnHover ?? true);
 
     props = useCompositeHover({
       store,
       ...props,
-      focusOnHover: focusOnHoverProp,
+      focusOnHover(event) {
+        if (!focusOnHoverProp(event)) return false;
+        return store.getState().open;
+      },
     });
 
     return props;
@@ -427,9 +428,8 @@ export interface ComboboxItemOptions<T extends ElementType = TagName>
   /**
    * Whether to focus the item when the user moves the pointer over it.
    *
-   * When the item is used with a
-   * [`ComboboxSelect`](https://ariakit.com/reference/combobox-select), the
-   * implicit default applies only while the select popup is open.
+   * Hover focus applies only while the combobox is open, including when this
+   * prop is explicitly set to `true` or a callback returns `true`.
    * @default true
    */
   focusOnHover?: CompositeHoverOptions["focusOnHover"];

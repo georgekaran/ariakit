@@ -65,7 +65,7 @@ withFramework(import.meta.dirname, async ({ test, query }) => {
     await test.expect(combobox).toBeFocused();
   });
 
-  test("hover activates an item in a collapsed standalone list", async ({
+  test("hover does not activate an item in a collapsed standalone list", async ({
     q,
   }) => {
     const combobox = q.combobox("Standalone fruit");
@@ -73,6 +73,20 @@ withFramework(import.meta.dirname, async ({ test, query }) => {
     const banana = items.option("Banana");
 
     await test.expect(combobox).toHaveAttribute("aria-expanded", "false");
+    await banana.hover();
+
+    await test.expect(banana).not.toHaveAttribute("data-active-item");
+    await test.expect(combobox).not.toHaveAttribute("aria-activedescendant");
+    await test.expect(combobox).not.toBeFocused();
+  });
+
+  test("hover activates an item in an open standalone list", async ({ q }) => {
+    const combobox = q.combobox("Standalone fruit");
+    const items = query(q.listbox("Standalone fruit options"));
+    const banana = items.option("Banana");
+
+    await combobox.click();
+    await test.expect(combobox).toHaveAttribute("aria-expanded", "true");
     await banana.hover();
 
     await test.expect(banana).toHaveAttribute("data-active-item");
@@ -83,7 +97,6 @@ withFramework(import.meta.dirname, async ({ test, query }) => {
         "aria-activedescendant",
         (await banana.getAttribute("id"))!,
       );
-    await test.expect(combobox).toHaveAttribute("aria-expanded", "false");
   });
 
   test("hover activates a real-focus item and keyboard navigation resumes DOM focus", async ({
