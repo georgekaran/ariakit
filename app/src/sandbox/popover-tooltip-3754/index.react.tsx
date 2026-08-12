@@ -21,6 +21,27 @@ function TooltipPopoverAnchor({ label }: AnchorProps) {
   );
 }
 
+// Mirrors the composition from
+// https://github.com/ariakit/ariakit/issues/3754#issuecomment-2086488732:
+// only the shared trigger and tooltip are inside TooltipProvider; the Popover
+// remains outside and must keep using the surrounding PopoverProvider store.
+function TriggerOnlyTooltipPopoverAnchor() {
+  const label = "Trigger only";
+  return (
+    <>
+      <Ariakit.TooltipProvider>
+        <Ariakit.TooltipAnchor render={<Ariakit.PopoverDisclosure />}>
+          {label}
+        </Ariakit.TooltipAnchor>
+        <Ariakit.Tooltip>{label} tooltip</Ariakit.Tooltip>
+      </Ariakit.TooltipProvider>
+      <Ariakit.Popover aria-label={`${label} popover`}>
+        {label} popover content
+      </Ariakit.Popover>
+    </>
+  );
+}
+
 export default function Example() {
   return (
     <div>
@@ -35,6 +56,10 @@ export default function Example() {
           <TooltipPopoverAnchor label="Tooltip first" />
         </Ariakit.PopoverProvider>
       </Ariakit.TooltipProvider>
+
+      <Ariakit.PopoverProvider>
+        <TriggerOnlyTooltipPopoverAnchor />
+      </Ariakit.PopoverProvider>
     </div>
   );
 }

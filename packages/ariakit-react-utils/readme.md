@@ -505,15 +505,7 @@ Creates a component hook that accepts props and returns props so they can be pas
 #### `createStoreContext`
 
 ```ts
-type StoreProvider<T extends Store> = React.ComponentType<{
-  value: T | undefined;
-  children?: React.ReactNode;
-}>;
-
-function createStoreContext<T extends Store>(
-  providers: StoreProvider<T>[] = [],
-  scopedProviders: StoreProvider<T>[] = [],
-): {
+function createStoreContext<T extends Store>(): {
   context: React.Context<T | undefined>;
   scopedContext: React.Context<T | undefined>;
   useContext: () => T | undefined;
@@ -529,6 +521,8 @@ function createStoreContext<T extends Store>(
 ```
 
 Creates an Ariakit store context with hooks and provider components.
+
+The returned providers expose the store through this context only. Component families don't inherit each other's contexts, so a store must be explicitly passed to components from other families, either through their `store` prop or through their own provider.
 
 <div align="right">
   <a href="#api-reference">&uarr; back to top</a>

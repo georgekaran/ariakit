@@ -15,7 +15,7 @@ afterEach(async () => {
 // `TooltipProvider` used to publish its store through the Hovercard and Popover
 // contexts as well, so a `PopoverDisclosure`/`Popover` pair nested inside it
 // would silently bind to the tooltip store and open on hover.
-test.each(["Popover first", "Tooltip first"])(
+test.each(["Popover first", "Tooltip first", "Trigger only"])(
   "tooltip and popover keep separate stores (%s)",
   async (label) => {
     await hover(q.button(label));
@@ -29,7 +29,7 @@ test.each(["Popover first", "Tooltip first"])(
   },
 );
 
-test.each(["Popover first", "Tooltip first"])(
+test.each(["Popover first", "Tooltip first", "Trigger only"])(
   "the popover disclosure toggles only the popover (%s)",
   async (label) => {
     await click(q.button(label));

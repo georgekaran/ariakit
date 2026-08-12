@@ -23,20 +23,22 @@ Each provider now renders its own regular and scoped contexts only, so the examp
 
 Components rendered _inside_ a composite, collection, dialog, popover, or hovercard element are unaffected: those elements still provide their own scoped context with the actual store. Composing [`PopoverArrow`](https://ariakit.com/reference/popover-arrow), [`PopoverHeading`](https://ariakit.com/reference/popover-heading), [`DialogDismiss`](https://ariakit.com/reference/dialog-dismiss), and similar components inside [`SelectPopover`](https://ariakit.com/reference/select-popover), [`Menu`](https://ariakit.com/reference/menu), [`ComboboxPopover`](https://ariakit.com/reference/combobox-popover), or [`Tooltip`](https://ariakit.com/reference/tooltip) keeps working, and so do the store links that intentionally compose different families, such as Select with Combobox, Menu with Combobox, and Tabs with Combobox or Select.
 
-What changes is a component from another family that sits inside a provider but outside its element, and relied on the inherited context to find a store. Pass the store explicitly, or render the matching provider:
+What changes is a component from another family that sits inside a provider but outside its element, and relied on the inherited context to find a store. Render the matching provider:
+
+```jsx
+<PopoverProvider>
+  <PopoverDisclosure />
+  <Popover />
+</PopoverProvider>
+```
+
+Or create a store and pass it explicitly:
 
 ```jsx
 const popover = usePopoverStore();
 
-<PopoverProvider store={popover}>
-  <TooltipProvider>
-    <TooltipAnchor render={<PopoverDisclosure store={popover} />}>
-      Anchor
-    </TooltipAnchor>
-    <Tooltip>Tooltip</Tooltip>
-    <Popover store={popover}>Popover</Popover>
-  </TooltipProvider>
-</PopoverProvider>;
+<PopoverDisclosure store={popover} />
+<Popover store={popover} />
 ```
 
 The `createStoreContext` function from `@ariakit/react-utils` no longer accepts the parent provider arrays:
