@@ -140,3 +140,31 @@ test("keeps the character the layout produced", () => {
     getEventKeyShortcuts({ key: "1", code: "Digit1", shiftKey: true }),
   ).toBe("Shift+1");
 });
+
+test("ignores keys that report input-method state", () => {
+  // Option+E on macOS starts an accent sequence. Physical-code recovery would
+  // otherwise read it as "Alt+E", and a command would cancel the accent.
+  expect(
+    getEventKeyShortcuts({ key: "Dead", code: "KeyE", altKey: true }),
+  ).toBe(null);
+  expect(getEventKeyShortcuts({ key: "Process", code: "KeyA" })).toBe(null);
+  expect(getEventKeyShortcuts({ key: "Unidentified", code: "KeyA" })).toBe(
+    null,
+  );
+});
+
+test("marks the synthetic click as composed", () => {
+  const button = document.createElement("button");
+  document.body.append(button);
+  let seen: MouseEvent | undefined;
+  button.addEventListener("click", (event) => {
+    seen = event;
+  });
+  fireShortcutClickEvent(button, { metaKey: true });
+  // Real clicks are composed, so a listener outside a shadow root observes
+  // them. A synthetic click that is not composed would be missed there.
+  expect(seen?.composed).toBe(true);
+  expect(seen?.metaKey).toBe(true);
+  expect(isShortcutClickEvent(seen!)).toBe(true);
+  button.remove();
+});

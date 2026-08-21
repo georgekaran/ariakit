@@ -23,3 +23,16 @@ each one is registered individually. Commands are global by default, scope to
 focus through `ShortcutTarget` (including nested and modal targets), work
 outside React through `createShortcutStore`, and display with configurable
 platform-specific glyphs.
+
+```tsx
+<ShortcutProvider glyphs={{ apple: { Meta: "⌘", "+": "" } }}>
+  <ShortcutTarget>
+    {/* Runs only while focus is inside the target. */}
+    <ShortcutCommand keyShortcuts="mod+B" onClick={toggleBold}>
+      Bold <Shortcut />
+    </ShortcutCommand>
+  </ShortcutTarget>
+</ShortcutProvider>
+```
+
+Thanks to [@georgekaran](https://github.com/georgekaran).

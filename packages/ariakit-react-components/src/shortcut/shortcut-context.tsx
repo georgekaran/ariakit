@@ -79,6 +79,13 @@ export const ShortcutTargetContext = createContext<
 export interface ShortcutCommandContextValue {
   keyShortcuts: string;
   disabled: boolean;
+  /**
+   * The normalized texts the command currently exposes through
+   * `aria-keyshortcuts`, space-separated. A nested
+   * [`Shortcut`](https://ariakit.com/reference/shortcut) reads availability from
+   * here, so what it displays cannot disagree with what the attribute claims.
+   */
+  availableKeyShortcuts: string;
 }
 
 export const ShortcutCommandContext = createContext<

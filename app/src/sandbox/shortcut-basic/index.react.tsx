@@ -52,6 +52,38 @@ function DisabledShortcuts() {
         displayDisabled={false}
         data-testid="disabled-hidden"
       />
+      {/* One vetoed alternative next to a free one. */}
+      <Shortcut
+        keyShortcuts="Control+H Control+L"
+        display="all"
+        displayDisabled={false}
+        data-testid="mixed-all"
+      />
+      <Shortcut
+        keyShortcuts="Control+H Control+L"
+        displayDisabled={false}
+        data-testid="mixed-first"
+      />
+    </>
+  );
+}
+
+function MixedCommand() {
+  const [clicks, setClicks] = useState(0);
+  return (
+    <>
+      <ShortcutCommand
+        keyShortcuts="Control+H Control+Y"
+        onClick={() => setClicks((clicks) => clicks + 1)}
+      >
+        Mixed
+        <Shortcut
+          display="all"
+          displayDisabled={false}
+          data-testid="command-mixed"
+        />
+      </ShortcutCommand>
+      <output>mixed clicks: {clicks}</output>
     </>
   );
 }
@@ -72,6 +104,17 @@ function FieldsetCommand() {
       <output>grouped clicks: {clicks}</output>
     </fieldset>
   );
+}
+
+function AccentCounter() {
+  const [count, setCount] = useState(0);
+  // Option+E on macOS starts an accent sequence. A shortcut on the same
+  // combination must not swallow it.
+  useShortcutCommand({
+    keyShortcuts: "Alt+E",
+    onTrigger: () => setCount((count) => count + 1),
+  });
+  return <output>accent count: {count}</output>;
 }
 
 function ProviderCounter() {
@@ -124,6 +167,7 @@ export default function Example() {
       <button>anchor</button>
       <ShortcutProvider glyphs={{ Control: "⌃" }}>
         <ProviderCounter />
+        <AccentCounter />
         <RemapCounter />
         <Shortcut keyShortcuts="Control+K" data-testid="plain" />
         <Shortcut
@@ -138,6 +182,7 @@ export default function Example() {
           data-testid="all"
         />
         <DisabledShortcuts />
+        <MixedCommand />
         <BoldButton />
         <FieldsetCommand />
         <SaveStatus />

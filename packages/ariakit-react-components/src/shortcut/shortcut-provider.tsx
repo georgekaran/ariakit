@@ -12,8 +12,15 @@ import { useShortcutStore } from "./shortcut-store.ts";
  * [Shortcut](https://ariakit.com/components/shortcut) components.
  *
  * Commands registered without a provider fall back to a shared global store, so
- * this component is only needed to scope shortcuts to a subtree or to configure
- * [`glyphs`](https://ariakit.com/reference/shortcut-provider#glyphs).
+ * this component is only needed to give a subtree its own command registry or to
+ * configure [`glyphs`](https://ariakit.com/reference/shortcut-provider#glyphs).
+ *
+ * A provider separates registrations, not keystrokes. Each store resolves its
+ * own commands from the same keydown, so the same shortcut registered under two
+ * providers runs in both. This keeps the outcome from depending on which store
+ * mounted first. Use
+ * [`ShortcutTarget`](https://ariakit.com/reference/shortcut-target) to make a
+ * shortcut depend on where focus is.
  * @see https://ariakit.com/components/shortcut
  * @example
  * ```jsx

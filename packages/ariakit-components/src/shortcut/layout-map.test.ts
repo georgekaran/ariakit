@@ -85,3 +85,25 @@ test("keeps the layout character without consulting the map", async () => {
     "Alt+A",
   );
 });
+
+test("reloads the layout map when the platform reports a change", async () => {
+  let layout: ReadonlyMap<string, string> = new Map([["KeyQ", "a"]]);
+  const listeners: Array<() => void> = [];
+  const { getEventKeyShortcuts, preloadShortcutLayoutMap } = await loadUtils({
+    getLayoutMap: async () => layout,
+    addEventListener: (type: string, listener: () => void) => {
+      if (type === "layoutchange") listeners.push(listener);
+    },
+  });
+  preloadShortcutLayoutMap();
+  await flush();
+  const event = { key: "æ", code: "KeyQ", altKey: true };
+  expect(getEventKeyShortcuts(event)).toBe("Alt+A");
+
+  // The user switches keyboard layout while the app is open. Keeping the first
+  // map would resolve every later keystroke through the previous layout.
+  layout = new Map([["KeyQ", "z"]]);
+  for (const listener of listeners) listener();
+  await flush();
+  expect(getEventKeyShortcuts(event)).toBe("Alt+Z");
+});

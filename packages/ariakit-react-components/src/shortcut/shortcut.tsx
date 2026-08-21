@@ -1,3 +1,4 @@
+import { isShortcutTextAvailable } from "@ariakit/components/shortcut/shortcut-store";
 import type { ShortcutPlatform } from "@ariakit/components/shortcut/utils";
 import { resolveKeyShortcuts } from "@ariakit/components/shortcut/utils";
 import { useStoreState } from "@ariakit/react-store";
@@ -74,20 +75,50 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
       () => resolveKeyShortcuts(keyShortcuts, platform),
       [keyShortcuts, platform],
     );
-    const visible = display === "all" ? shortcuts : shortcuts.slice(0, 1);
-    const firstText = visible[0]?.text;
+    // Every declared shortcut is resolved, not only the displayed one. With
+    // several alternatives, `display="first"` must not settle on a disabled
+    // shortcut while an enabled one is available. Joined into a string so the
+    // selector result stays referentially stable.
+    const disabledTexts = useStoreState(store, (state) =>
+      shortcuts
+        .filter((shortcut) => {
+          if (!isShortcutTextAvailable(state, shortcut.text)) return true;
+          const records = state.commands.get(shortcut.text);
+          if (!records?.length) return false;
+          return records.every((record) => record.disabled);
+        })
+        .map((shortcut) => shortcut.text)
+        .join(" "),
+    );
 
-    const storeDisabled = useStoreState(store, (state) => {
-      if (!firstText) return false;
-      const records = state.commands.get(firstText);
-      if (!records?.length) return false;
-      const veto = records.some(
-        (record) => record.disabled && !record.onTrigger && !record.getElement,
-      );
-      return veto || records.every((record) => record.disabled);
-    });
-    const disabled = commandContext ? commandContext.disabled : storeDisabled;
-    const hidden = !displayDisabled && disabled;
+    const disabledSet = useMemo(
+      () => new Set(disabledTexts ? disabledTexts.split(" ") : []),
+      [disabledTexts],
+    );
+
+    // Inside a command, availability comes from the command itself, which also
+    // knows whether its element is disabled. Own `keyShortcuts` or an explicit
+    // `platform` resolve different texts than the command did, so per-shortcut
+    // comparison is meaningless and only the command's own state applies.
+    const inheriting = !!commandContext && !keyShortcutsProp && !platformProp;
+    const availableSet = useMemo(() => {
+      const available = commandContext?.availableKeyShortcuts;
+      return new Set(available ? available.split(" ") : []);
+    }, [commandContext]);
+
+    const isDisabled = (text: string) => {
+      if (!commandContext) return disabledSet.has(text);
+      if (commandContext.disabled) return true;
+      return inheriting && !availableSet.has(text);
+    };
+
+    // Dropping the disabled alternatives before slicing is what makes
+    // `displayDisabled={false}` fall through to the next usable shortcut.
+    const renderable = displayDisabled
+      ? shortcuts
+      : shortcuts.filter((shortcut) => !isDisabled(shortcut.text));
+    const visible = display === "all" ? renderable : renderable.slice(0, 1);
+    const hidden = !displayDisabled && !visible.length;
 
     const getGlyph = (key: string) =>
       resolveGlyph(glyphsProp, platform, key) ??

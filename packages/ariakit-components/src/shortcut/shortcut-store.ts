@@ -1,11 +1,6 @@
 import { createStore } from "@ariakit/store";
 import type { Store, StoreProps } from "@ariakit/store";
-import {
-  addGlobalEventListener,
-  canUseDOM,
-  isElement,
-  isTextField,
-} from "@ariakit/utils";
+import { addGlobalEventListener, canUseDOM, isElement } from "@ariakit/utils";
 import type { KeyboardEventLike } from "./utils.ts";
 import {
   fireShortcutClickEvent,
@@ -36,6 +31,23 @@ function toElementGetter(
   return () => value;
 }
 
+// Input types that do not consume plain keystrokes as text. Everything else,
+// including unknown types, behaves like a text field. `selectionStart` cannot
+// answer this on its own: it is `null` for `number`, `date`, and `email`, which
+// do consume typed characters.
+const NON_TEXT_INPUT_TYPES = new Set([
+  "button",
+  "checkbox",
+  "color",
+  "file",
+  "hidden",
+  "image",
+  "radio",
+  "range",
+  "reset",
+  "submit",
+]);
+
 /**
  * Whether the event originated somewhere that consumes plain keystrokes as
  * text, in which case only shortcuts carrying a command modifier may run.
@@ -44,9 +56,43 @@ function isTextTarget(target: EventTarget | null) {
   // `isElement` is realm-agnostic, so targets coming from a same-origin frame
   // are not rejected for belonging to another realm.
   if (!isElement(target)) return false;
-  if (isTextField(target)) return true;
-  if (target instanceof HTMLElement && target.isContentEditable) return true;
-  return target.tagName === "SELECT";
+  if (target.tagName === "TEXTAREA") return true;
+  if (target.tagName === "SELECT") return true;
+  if (target.tagName === "INPUT") {
+    const type = (target.getAttribute("type") ?? "text").toLowerCase();
+    return !NON_TEXT_INPUT_TYPES.has(type);
+  }
+  // A property check rather than `instanceof HTMLElement`, which is bound to the
+  // realm it was read from and would miss an editor inside a same-origin frame.
+  return "isContentEditable" in target && !!target.isContentEditable;
+}
+
+/**
+ * The element the event actually started on.
+ *
+ * `event.target` is retargeted to the shadow host, which would hide a text field
+ * inside a shadow root from the text-entry guard. The composed path still starts
+ * at the real element.
+ */
+function getEventOrigin(event: Event) {
+  const origin = event.composedPath?.()[0];
+  return isElement(origin) ? origin : (event.target ?? null);
+}
+
+/**
+ * Whether `element` contains `descendant`, crossing shadow boundaries.
+ *
+ * `Node.contains` stops at a shadow root, so a target in the light DOM would not
+ * see a command inside a shadow tree it hosts.
+ */
+function containsDeep(element: Element, descendant: Element) {
+  let node: Element | null = descendant;
+  while (node) {
+    if (element === node || element.contains(node)) return true;
+    const root = node.getRootNode?.() as { host?: Element } | undefined;
+    node = root?.host ?? null;
+  }
+  return false;
 }
 
 function hasCommandModifier(text: string) {
@@ -61,6 +107,48 @@ function hasCommandModifier(text: string) {
  */
 function isVeto(record: ShortcutStoreCommand) {
   return !!record.disabled && !record.onTrigger && !record.getElement;
+}
+
+/** The element a record or target is scoped to, if it currently has one. */
+function resolveTargetElement(
+  target: Element | null | (() => Element | null) | undefined,
+) {
+  if (target == null) return null;
+  return typeof target === "function" ? target() : target;
+}
+
+/**
+ * Whether the shortcut is available to a command rendered at `element`.
+ *
+ * A veto suppresses its shortcut for everything that shares its scope, so it
+ * only reaches a command that sits on the same containment branch. Siblings
+ * never share a scope chain, and a veto with no target is global. Pass `null`
+ * when the position is unknown, which assumes every veto can reach it.
+ *
+ * `aria-keyshortcuts` and the visible
+ * [`Shortcut`](https://ariakit.com/reference/shortcut) both read availability
+ * from here, so neither can disagree with what dispatch does.
+ * @example
+ * isShortcutTextAvailable(store.getState(), "Control+K", buttonElement);
+ */
+export function isShortcutTextAvailable(
+  state: ShortcutStoreState,
+  text: string,
+  element?: Element | null,
+) {
+  const records = state.commands.get(text);
+  if (!records?.length) return true;
+  return !records.some((record) => {
+    if (!isVeto(record)) return false;
+    // A global veto reaches everything.
+    if (record.target == null) return true;
+    const target = resolveTargetElement(record.target);
+    // A target that resolves to nothing is inactive, not global, so a veto on a
+    // ref that has not mounted yet never suppresses anything.
+    if (!target) return false;
+    if (!element) return true;
+    return containsDeep(target, element) || containsDeep(element, target);
+  });
 }
 
 /**
@@ -133,28 +221,51 @@ export function createShortcutStore(
   let refCount = 0;
 
   /**
-   * The stack of registered targets containing the reference element,
-   * innermost first, cut off after the innermost modal target so commands
-   * scoped outside a modal become unreachable.
+   * The stack of scope elements containing the reference element, innermost
+   * first, cut off after the innermost modal target so commands scoped outside a
+   * modal become unreachable.
+   *
+   * Registered targets are always part of the stack. The elements the given
+   * records name through
+   * [`target`](https://ariakit.com/reference/shortcut-command#target) join it
+   * too, so scoping a command to a plain element works without also registering
+   * that element as a
+   * [`ShortcutTarget`](https://ariakit.com/reference/shortcut-target). Only a
+   * registered target can be modal, so an unregistered element never cuts the
+   * stack off.
    */
-  function getScopeChain(reference: Element | null) {
+  function getScopeChain(
+    reference: Element | null,
+    records?: readonly ShortcutStoreCommand[],
+  ) {
     if (!reference) return [] as Element[];
-    const containing: Element[] = [];
+    // A set, because one element can be both a registered target and the target
+    // several records name, and a comparator that sees duplicates cannot sort.
+    const containing = new Set<Element>();
+    const add = (element: Element | null) => {
+      if (!element) return;
+      if (!containsDeep(element, reference)) return;
+      containing.add(element);
+    };
     for (const target of targets) {
-      const element = target.getElement();
-      if (!element) continue;
-      if (element === reference || element.contains(reference)) {
-        containing.push(element);
-      }
+      add(target.getElement());
     }
-    // Innermost first: an element contained by another sorts before it.
-    containing.sort((a, b) => (a.contains(b) ? 1 : b.contains(a) ? -1 : 0));
-    const modalIndex = containing.findIndex((element) =>
+    for (const record of records ?? []) {
+      if (record.target == null) continue;
+      add(resolveTargetElement(record.target));
+    }
+    // Innermost first: an element contained by another sorts before it. Every
+    // element here contains the same reference, so containment totally orders
+    // them.
+    const chain = [...containing].sort((a, b) =>
+      containsDeep(a, b) ? 1 : containsDeep(b, a) ? -1 : 0,
+    );
+    const modalIndex = chain.findIndex((element) =>
       [...targets].some(
         (target) => target.modal && target.getElement() === element,
       ),
     );
-    return modalIndex === -1 ? containing : containing.slice(0, modalIndex + 1);
+    return modalIndex === -1 ? chain : chain.slice(0, modalIndex + 1);
   }
 
   /**
@@ -167,7 +278,7 @@ export function createShortcutStore(
   ) {
     const { target } = record;
     if (target == null) return Number.POSITIVE_INFINITY;
-    const element = typeof target === "function" ? target() : target;
+    const element = resolveTargetElement(target);
     if (!element) return null;
     const index = chain.indexOf(element);
     return index === -1 ? null : index;
@@ -191,27 +302,45 @@ export function createShortcutStore(
     return isElement(target) ? target : null;
   }
 
+  /**
+   * The records that win a shortcut for an event originating at the element the
+   * chain was built from: the innermost scope level that has something to run.
+   * Empty when the shortcut is out of scope, vetoed, or has nothing eligible.
+   *
+   * Keyboard dispatch and the click bridge both resolve winners here, so one
+   * shortcut never reaches a different set of commands depending on how it was
+   * invoked.
+   */
+  function getWinningRecords(
+    records: readonly ShortcutStoreCommand[] | undefined,
+    chain: readonly Element[],
+  ) {
+    if (!records?.length) return [];
+    const scoped = getScopedRecords(records, chain);
+    if (!scoped.length) return [];
+    if (scoped.some(({ record }) => isVeto(record))) return [];
+    const eligible = scoped.filter(({ record }) => isEligible(record));
+    if (!eligible.length) return [];
+    // Only the innermost level with something to run competes.
+    const level = Math.min(...eligible.map(({ index }) => index));
+    return eligible
+      .filter(({ index }) => index === level)
+      .map(({ record }) => record);
+  }
+
   /** Runs the commands registered for the pressed shortcut. */
   function dispatch(text: string, event: KeyboardEvent) {
-    if (isTextTarget(event.target) && !hasCommandModifier(text)) return;
+    const origin = getEventOrigin(event);
+    if (isTextTarget(origin) && !hasCommandModifier(text)) return;
 
     const records = shortcut.getState().commands.get(text);
     if (!records?.length) return;
 
-    const chain = getScopeChain(getReference(event.target));
-    const scoped = getScopedRecords(records, chain);
-    if (!scoped.length) return;
-
-    if (scoped.some(({ record }) => isVeto(record))) return;
-
-    const eligible = scoped.filter(({ record }) => isEligible(record));
-    if (!eligible.length) return;
-
-    // Only the innermost level with something to run competes.
-    const level = Math.min(...eligible.map(({ index }) => index));
-    const winning = eligible
-      .filter(({ index }) => index === level)
-      .map(({ record }) => record);
+    // Scope resolves from the composed origin too, so a command scoped to an
+    // element inside a shadow root is still reachable from within it.
+    const chain = getScopeChain(getReference(origin), records);
+    const winning = getWinningRecords(records, chain);
+    if (!winning.length) return;
 
     event.preventDefault();
     // Record that a shortcut store handled this event, so sibling stores can
@@ -374,23 +503,26 @@ export function createShortcutStore(
   ) => {
     const shortcuts = resolveKeyShortcuts(keyShortcuts);
     if (!shortcuts.length) return;
-    const chain = getScopeChain(reference ?? null);
     const commands = shortcut.getState().commands;
+    const all = shortcuts.flatMap(({ text }) => [
+      ...(commands.get(text) ?? []),
+    ]);
+    if (!all.length) return;
+    const chain = getScopeChain(reference ?? null, all);
+    // A set, because one registration covers every alternative it was declared
+    // with. Running the winners per shortcut text would call it once per
+    // alternative for a single click.
+    const winning = new Set<ShortcutStoreCommand>();
     for (const { text } of shortcuts) {
-      const records = commands.get(text);
-      if (!records?.length) continue;
-      const scoped = getScopedRecords(records, chain);
-      if (!scoped.length) continue;
-      if (scoped.some(({ record }) => isVeto(record))) continue;
-      // Every level runs: this bridges a click to headless registrations
-      // rather than competing for a single activation. Eligibility is checked
-      // the same way as keyboard dispatch, so a handler attached to a disabled
-      // element cannot be reached through another command's click either.
-      for (const { record } of scoped) {
-        if (!record.onTrigger) continue;
-        if (!isEligible(record)) continue;
-        record.onTrigger(event);
+      for (const record of getWinningRecords(commands.get(text), chain)) {
+        winning.add(record);
       }
+    }
+    for (const record of winning) {
+      // Only handler commands run. The click already activated its own element,
+      // and clicking a different element because this one was clicked would
+      // invoke a command the user never asked for.
+      record.onTrigger?.(event);
     }
   };
 
@@ -449,8 +581,9 @@ export interface ShortcutStoreCommand {
   getElement?: () => Element | null;
   /**
    * The focus scope this command belongs to. `null` or `undefined` means
-   * global. A getter that returns `null` makes the record inactive rather than
-   * global, so a not-yet-mounted ref never leaks into the global scope.
+   * global. Any element works, whether or not it is also a registered target. A
+   * getter that returns `null` makes the record inactive rather than global, so
+   * a not-yet-mounted ref never leaks into the global scope.
    */
   target?: Element | null | (() => Element | null);
 }
@@ -484,8 +617,9 @@ export interface ShortcutStoreCommandOptions {
    */
   element?: Element | (() => Element | null);
   /**
-   * The focus scope to bind this command to. Accepts an element or a getter.
-   * `null` or `undefined` registers a global command.
+   * The focus scope to bind this command to. Accepts an element or a getter,
+   * and the element does not have to be a registered target. `null` or
+   * `undefined` registers a global command.
    */
   target?: Element | null | (() => Element | null);
 }
@@ -556,10 +690,14 @@ export interface ShortcutStoreFunctions {
     callback: (text: string) => void,
   ) => () => void;
   /**
-   * Runs the in-scope handler commands registered for the given shortcuts,
+   * Runs the handler commands a keydown would have run from `reference`,
    * without clicking any element and without preventing the event's default.
    * This is what bridges a real click on a shortcut command to headless
    * registrations of the same shortcut.
+   *
+   * The winning scope is resolved exactly as keyboard dispatch resolves it, so
+   * only the innermost level runs, and a registration declared with several
+   * alternative shortcuts runs once rather than once per alternative.
    * @example
    * store.triggerCommands("mod+B", event, element);
    */

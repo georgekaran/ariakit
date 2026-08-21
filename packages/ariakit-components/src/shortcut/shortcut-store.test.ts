@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import {
   createShortcutStore,
   getGlobalShortcutStore,
+  isShortcutTextAvailable,
 } from "./shortcut-store.ts";
 import { isShortcutClickEvent } from "./utils.ts";
 
@@ -438,7 +439,7 @@ test("a target getter returning null keeps the command inactive", () => {
   cleanup();
 });
 
-test("triggerCommands runs in-scope handler commands only", () => {
+test("triggerCommands runs the same commands the keyboard would", () => {
   const store = createShortcutStore();
   const { outer, leaf, outside, cleanup } = makeTree();
   const calls: string[] = [];
@@ -460,12 +461,188 @@ test("triggerCommands runs in-scope handler commands only", () => {
     }),
   );
   track(store.registerCommand({ keyShortcuts: "Control+B", element: button }));
+
+  // Inside the target the scoped command is the innermost level, so it wins
+  // alone. The element is never clicked here: bridging a click to a different
+  // element would invoke a command the user never asked for.
   store.triggerCommands("Control+B", new MouseEvent("click"), leaf);
-  expect(calls).toEqual(["global-handler", "scoped-handler"]);
+  expect(calls).toEqual(["scoped-handler"]);
+  // Outside it, only the global level is in scope.
   store.triggerCommands("Control+B", new MouseEvent("click"), outside);
-  expect(calls).toEqual(["global-handler", "scoped-handler", "global-handler"]);
+  expect(calls).toEqual(["scoped-handler", "global-handler"]);
+
+  // A click resolves the same winning level the keyboard does, so a shortcut
+  // cannot reach a different set of handlers depending on how it was invoked.
+  // Only element activation differs, because a click already happened.
+  calls.length = 0;
+  pressKey("b", { ctrlKey: true }, leaf);
+  expect(calls).toEqual(["scoped-handler"]);
+  calls.length = 0;
+  pressKey("b", { ctrlKey: true }, outside);
+  expect(calls).toEqual(["global-handler", "element-click"]);
+
   button.remove();
   cleanup();
+});
+
+test("the click bridge runs one registration once per click", () => {
+  const store = createShortcutStore();
+  let count = 0;
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+K Control+P",
+      onTrigger: () => count++,
+    }),
+  );
+  // One registration covers both alternatives, so resolving them separately
+  // would run it twice for a single click.
+  store.triggerCommands("Control+K Control+P", new MouseEvent("click"));
+  expect(count).toBe(1);
+});
+
+test("a command scopes to an element that is not a registered target", () => {
+  const store = createShortcutStore();
+  const outer = document.createElement("div");
+  const editor = document.createElement("div");
+  const inside = document.createElement("button");
+  const beside = document.createElement("button");
+  editor.append(inside);
+  outer.append(editor, beside);
+  document.body.append(outer);
+
+  track(store.registerTarget({ element: outer }));
+  let ran = 0;
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+E",
+      target: editor,
+      onTrigger: () => ran++,
+    }),
+  );
+
+  pressKey("e", { ctrlKey: true }, inside);
+  expect(ran).toBe(1);
+  // Still a scope: the command stays unreachable from outside the element.
+  pressKey("e", { ctrlKey: true }, beside);
+  expect(ran).toBe(1);
+  outer.remove();
+});
+
+test("an unregistered target still ranks below a nested registered one", () => {
+  const store = createShortcutStore();
+  const editor = document.createElement("div");
+  const inner = document.createElement("div");
+  const leaf = document.createElement("button");
+  inner.append(leaf);
+  editor.append(inner);
+  document.body.append(editor);
+
+  track(store.registerTarget({ element: inner }));
+  const calls: string[] = [];
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+E",
+      target: editor,
+      onTrigger: () => calls.push("editor"),
+    }),
+  );
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+E",
+      target: inner,
+      onTrigger: () => calls.push("inner"),
+    }),
+  );
+
+  pressKey("e", { ctrlKey: true }, leaf);
+  // Containment ranks both scopes, whether or not they were registered.
+  expect(calls).toEqual(["inner"]);
+  editor.remove();
+});
+
+test("a veto in a sibling scope leaves the shortcut available", () => {
+  const store = createShortcutStore();
+  const a = document.createElement("div");
+  const b = document.createElement("div");
+  const buttonA = document.createElement("button");
+  const buttonB = document.createElement("button");
+  a.append(buttonA);
+  b.append(buttonB);
+  document.body.append(a, b);
+
+  track(store.registerTarget({ element: a }));
+  track(store.registerTarget({ element: b }));
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+Q",
+      disabled: true,
+      target: a,
+    }),
+  );
+  let ran = 0;
+  track(
+    store.registerCommand({
+      keyShortcuts: "Control+Q",
+      target: b,
+      onTrigger: () => ran++,
+    }),
+  );
+
+  const state = store.getState();
+  // The veto never shares a scope chain with the command, so availability must
+  // agree with dispatch instead of reporting the shortcut as suppressed.
+  expect(isShortcutTextAvailable(state, "Control+Q", buttonB)).toBe(true);
+  pressKey("q", { ctrlKey: true }, buttonB);
+  expect(ran).toBe(1);
+
+  // The same veto does reach a command inside its own scope.
+  expect(isShortcutTextAvailable(state, "Control+Q", buttonA)).toBe(false);
+  a.remove();
+  b.remove();
+});
+
+test("a veto with no scope reaches every command", () => {
+  const store = createShortcutStore();
+  const button = document.createElement("button");
+  document.body.append(button);
+  track(store.registerCommand({ keyShortcuts: "Control+Q", disabled: true }));
+  expect(isShortcutTextAvailable(store.getState(), "Control+Q", button)).toBe(
+    false,
+  );
+  // A target that has not mounted yet is inactive, not global.
+  const pending = createShortcutStore();
+  track(
+    pending.registerCommand({
+      keyShortcuts: "Control+Q",
+      disabled: true,
+      target: () => null,
+    }),
+  );
+  expect(isShortcutTextAvailable(pending.getState(), "Control+Q", button)).toBe(
+    true,
+  );
+  button.remove();
+});
+
+test("plain shortcuts do not run while typing in a number input", () => {
+  const store = createShortcutStore();
+  const number = document.createElement("input");
+  number.type = "number";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  document.body.append(number, checkbox);
+  let ran = 0;
+  track(store.registerCommand({ keyShortcuts: "K", onTrigger: () => ran++ }));
+
+  // `selectionStart` is null on a number input, but it still consumes the key
+  // as text.
+  pressKey("k", {}, number);
+  expect(ran).toBe(0);
+  // A checkbox consumes nothing, so a plain shortcut stays available.
+  pressKey("k", {}, checkbox);
+  expect(ran).toBe(1);
+  number.remove();
+  checkbox.remove();
 });
 
 test("registers equivalent spellings once", () => {

@@ -109,3 +109,17 @@ test("pressing a shared shortcut runs the handler once", async () => {
   // exactly one increment for one keypress.
   expect(output("saves").textContent).toBe("saves: 1");
 });
+
+test("displayDisabled=false falls through to an available alternative", () => {
+  // Control+H is vetoed and Control+L is free, so only Control+L renders and
+  // the element stays visible instead of being hidden by the first shortcut.
+  expect(testId("mixed-all")).not.toHaveAttribute("hidden");
+  expect(testId("mixed-all").textContent).toBe("⌃+L");
+  expect(testId("mixed-first")).not.toHaveAttribute("hidden");
+  expect(testId("mixed-first").textContent).toBe("⌃+L");
+});
+
+test("a command's display shows exactly what aria-keyshortcuts claims", () => {
+  expect(q.button("Mixed")).toHaveAttribute("aria-keyshortcuts", "Control+Y");
+  expect(testId("command-mixed").textContent).toBe("⌃+Y");
+});

@@ -73,6 +73,19 @@ const MODIFIER_EVENT_KEYS = new Set<string>([
   "SymbolLock",
 ]);
 
+// Keys that report input-method state instead of a key the user pressed.
+// `Dead` starts an accent sequence, such as Option+E on macOS, and `Process`
+// means an input method is consuming the keystroke. Matching either would run a
+// shortcut, and preventing the default would cancel the text being composed.
+// The first dead keydown still reports `isComposing: false`, so the composition
+// guard in the store cannot catch it. `Unidentified` names no key at all.
+// See https://www.w3.org/TR/uievents/#keys-dead
+const RESERVED_EVENT_KEYS = new Set<string>([
+  "Dead",
+  "Process",
+  "Unidentified",
+]);
+
 const KEY_NAMES = [
   "Enter",
   "Tab",
@@ -112,6 +125,7 @@ function warn(...args: unknown[]) {
 
 interface KeyboardLayoutSource {
   getLayoutMap?: () => Promise<ReadonlyMap<string, string>>;
+  addEventListener?: (type: string, listener: () => void) => void;
 }
 
 let layoutMap: ReadonlyMap<string, string> | null = null;
@@ -139,14 +153,22 @@ export function preloadShortcutLayoutMap() {
     navigator as Navigator & { keyboard?: KeyboardLayoutSource }
   ).keyboard;
   if (typeof keyboard?.getLayoutMap !== "function") return;
-  keyboard
-    .getLayoutMap()
-    .then((map) => {
-      layoutMap = map;
-    })
-    .catch(() => {
-      // The map stays unavailable and the fallback keeps resolving events.
-    });
+  const load = () => {
+    keyboard
+      .getLayoutMap?.()
+      .then((map) => {
+        layoutMap = map;
+      })
+      .catch(() => {
+        // The map stays unavailable and the fallback keeps resolving events.
+      });
+  };
+  // The map only describes the layout that was active when it resolved. Reload
+  // it whenever the platform reports a change, so a user who switches layout
+  // while the app is open does not keep resolving keys through the previous one.
+  // See https://wicg.github.io/keyboard-map/
+  keyboard.addEventListener?.("layoutchange", load);
+  load();
 }
 
 /**
@@ -301,6 +323,9 @@ export function getEventKeyShortcuts(event: KeyboardEventLike): string | null {
   const { key, code, metaKey, ctrlKey, altKey, shiftKey } = event;
   if (!key) return null;
   if (MODIFIER_EVENT_KEYS.has(key)) return null;
+  // Before the physical-code recovery below, which would otherwise turn a dead
+  // key such as Option+E into "Alt+E" and let a shortcut cancel accent input.
+  if (RESERVED_EVENT_KEYS.has(key)) return null;
 
   // Normally already requested when the first store was created. This covers
   // direct calls to this function with no store in play.
@@ -406,9 +431,16 @@ export function fireShortcutClickEvent(
   element: Element,
   eventInit?: MouseEventInit,
 ) {
-  const event = new MouseEvent("click", {
+  // Built in the element's own realm, so a command rendered into a same-origin
+  // frame receives an event that frame's own code recognizes as a MouseEvent.
+  const view = element.ownerDocument?.defaultView;
+  const MouseEventConstructor = view?.MouseEvent ?? MouseEvent;
+  const event = new MouseEventConstructor("click", {
     bubbles: true,
     cancelable: true,
+    // Real clicks are composed, so ancestor listeners outside a shadow root
+    // observe them. Without this they would see user clicks but miss shortcuts.
+    composed: true,
     ...eventInit,
   });
   shortcutClickEvents.add(event);
