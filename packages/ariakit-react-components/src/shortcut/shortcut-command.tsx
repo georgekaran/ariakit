@@ -1,9 +1,14 @@
-import { isShortcutTextAvailable } from "@ariakit/components/shortcut/shortcut-store";
+import type {
+  ShortcutClickEvent,
+  ShortcutEvent,
+  ShortcutScopeHandle,
+  ShortcutScopeRef,
+} from "@ariakit/components/shortcut/shortcut-store";
 import {
   isShortcutClickEvent,
-  isShortcutElementEnabled,
-  resolveKeyShortcuts,
+  resolveKeys,
 } from "@ariakit/components/shortcut/utils";
+import { useStoreState } from "@ariakit/react-store";
 import {
   createElement,
   createHook,
@@ -13,260 +18,238 @@ import {
   useSafeLayoutEffect,
   useWrapElement,
 } from "@ariakit/react-utils";
-import type { Props } from "@ariakit/react-utils";
-import { sync } from "@ariakit/store";
-import { disabledFromProps } from "@ariakit/utils";
-// Aliased so `MouseEvent` in the option signatures stays the DOM event the
-// core store dispatches, not React's synthetic one.
-import type {
-  ElementType,
-  MouseEvent as ReactMouseEvent,
-  RefObject,
-} from "react";
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { Options, Props } from "@ariakit/react-utils";
+import {
+  disabledFromElement,
+  disabledFromProps,
+  hasFocusWithin,
+} from "@ariakit/utils";
+import type { BooleanOrCallback } from "@ariakit/utils";
+import type { ElementType, MouseEvent as ReactMouseEvent } from "react";
+import { useContext, useMemo, useRef, useState } from "react";
 import { withDefaultButtonType } from "../button/utils.ts";
-import type { CommandOptions } from "../command/command.tsx";
-import { useCommand } from "../command/command.tsx";
 import {
   ShortcutCommandContext,
-  ShortcutDisclosureRegistryContext,
-  ShortcutTargetContext,
+  ShortcutScopeContext,
   useShortcutContext,
 } from "./shortcut-context.tsx";
 import type { ShortcutStore } from "./shortcut-store.ts";
-import { useShortcutPlatform } from "./shortcut-store.ts";
+import { useShortcutKeys } from "./shortcut-store.ts";
 
 const TagName = "button" satisfies ElementType;
 type TagName = typeof TagName;
 type HTMLType = HTMLElementTagNameMap[TagName];
 
-/**
- * Normalizes the `target` option into the shape the core store expects.
- *
- * `null` is an explicit opt-out to the global scope, `undefined` inherits the
- * nearest [`ShortcutTarget`](https://ariakit.com/reference/shortcut-target),
- * and a ref or element scopes to that element.
- */
-export function useResolvedTarget(
-  target?: RefObject<Element | null> | Element | null,
-) {
-  const contextRef = useContext(ShortcutTargetContext);
-  return useMemo(() => {
-    if (target === null) return null;
-    if (target === undefined) {
-      if (!contextRef) return null;
-      return () => contextRef.current;
-    }
-    // Duck-typed instead of `instanceof Element` so this stays safe on the
-    // server, where the DOM constructor doesn't exist.
-    if ("current" in target) return () => target.current;
-    return target;
-  }, [target, contextRef]);
+function resolveScopeElement(
+  element: Element | (() => Element | null) | undefined,
+): Element | null {
+  if (!element) return null;
+  return typeof element === "function" ? element() : element;
 }
 
 /**
- * Registers a handler-only shortcut command on the shortcut store from context
- * (or the given store). The command is unregistered on unmount and
- * re-registered whenever
- * [`keyShortcuts`](https://ariakit.com/reference/use-shortcut-command#keyshortcuts),
- * [`disabled`](https://ariakit.com/reference/use-shortcut-command#disabled), or
- * the [`target`](https://ariakit.com/reference/use-shortcut-command#target)
- * change.
- * @see https://ariakit.com/components/shortcut
- * @example
- * ```jsx
- * useShortcutCommand({
- *   keyShortcuts: "mod+S",
- *   onTrigger: () => save(),
- * });
- * ```
+ * Whether the given scope handle's region -- its own element, plus the
+ * elements of every child scope registered under it -- currently contains
+ * focus (A6). Not `Node.contains`: a portalled child's element need not be a
+ * DOM descendant of its parent's.
  */
-export function useShortcutCommand(options: UseShortcutCommandOptions) {
-  const context = useShortcutContext();
-  const store = options.store ?? context;
-  const target = useResolvedTarget(options.target);
-  const hasTrigger = !!options.onTrigger;
-  const onTrigger = useEvent(options.onTrigger);
-  // Depend on the stable `register` function rather than the registry object,
-  // whose identity changes on every registration.
-  const register = useContext(ShortcutDisclosureRegistryContext)?.register;
-  const { keyShortcuts, disabled } = options;
-
-  useEffect(() => {
-    return store.registerCommand({
-      keyShortcuts,
-      disabled,
-      onTrigger: hasTrigger ? onTrigger : undefined,
-      target,
-    });
-  }, [store, keyShortcuts, disabled, hasTrigger, onTrigger, target]);
-
-  useEffect(() => {
-    if (!register) return;
-    const texts = resolveKeyShortcuts(keyShortcuts).map(
-      (shortcut) => shortcut.text,
-    );
-    if (!texts.length) return;
-    return register(texts);
-  }, [register, keyShortcuts]);
+function isScopeHandleFocused(handle: ShortcutScopeHandle): boolean {
+  const own = resolveScopeElement(handle.element);
+  if (own && hasFocusWithin(own)) return true;
+  for (const child of handle.children) {
+    if (isScopeHandleFocused(child)) return true;
+  }
+  return false;
 }
 
-export interface UseShortcutCommandOptions {
-  /**
-   * Object returned by the
-   * [`useShortcutStore`](https://ariakit.com/reference/use-shortcut-store)
-   * hook. If not provided, the closest
-   * [`ShortcutProvider`](https://ariakit.com/reference/shortcut-provider)
-   * component's context will be used, falling back to a shared global store.
-   */
-  store?: ShortcutStore;
-  /**
-   * One or more space-separated shortcuts, such as `"mod+K"` or
-   * `"apple:Meta+Shift+T pc:Control+Alt+T"`. Each one is registered
-   * individually.
-   */
-  keyShortcuts: string;
-  /**
-   * Whether the command is disabled. A disabled registration with no
-   * [`onTrigger`](https://ariakit.com/reference/use-shortcut-command#ontrigger)
-   * makes the shortcut unavailable to every other command in scope.
-   * @default false
-   */
-  disabled?: boolean;
-  /**
-   * Called when the shortcut is pressed.
-   */
-  onTrigger?: (event: KeyboardEvent | MouseEvent) => void;
-  /**
-   * The focus scope this command belongs to. `undefined` inherits the closest
-   * [`ShortcutTarget`](https://ariakit.com/reference/shortcut-target), `null`
-   * opts out to the global scope, and a ref or element scopes the command to
-   * that element, whether or not it is also a
-   * [`ShortcutTarget`](https://ariakit.com/reference/shortcut-target).
-   */
-  target?: RefObject<Element | null> | Element | null;
+/** An explicit scope ref is tested by plain containment (A6). */
+function isRefFocused(ref: ShortcutScopeRef): boolean {
+  const element = "current" in ref ? ref.current : ref;
+  if (!element) return false;
+  return hasFocusWithin(element);
 }
 
+/**
+ * Resolves a command's `scope` option into whether its region currently
+ * contains focus. A command with no region at all -- `null`, or `undefined`
+ * with no enclosing `ShortcutScope` -- is always in scope (A9 step 6).
+ */
+function isInScope(
+  scope: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
+  scopeContext: ShortcutScopeHandle | undefined,
+): boolean {
+  if (scope === null) return true;
+  if (scope === undefined) {
+    if (!scopeContext) return true;
+    return isScopeHandleFocused(scopeContext);
+  }
+  const refs = Array.isArray(scope) ? scope : [scope];
+  return refs.some(isRefFocused);
+}
+
+/**
+ * Resolves the `scope` option a command registers with: an explicit `scope`
+ * prop wins, `null` opts out, and `undefined` inherits the closest
+ * `ShortcutScope` from React context (A6).
+ */
+function resolveCommandScope(
+  scope: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
+  scopeContext: ShortcutScopeHandle | undefined,
+): ShortcutScopeRef | ShortcutScopeRef[] | null | undefined {
+  if (scope !== undefined) return scope;
+  if (!scopeContext) return undefined;
+  return {
+    get current() {
+      return resolveScopeElement(scopeContext.element);
+    },
+  };
+}
+
+/**
+ * Whether the element is disabled, including through an ancestor
+ * `<fieldset disabled>`. `disabledFromElement` alone is not enough: like
+ * `element.inert` -- which is `false` on a descendant of an inert subtree,
+ * so the dispatcher itself checks `element.closest("[inert]")` instead (see
+ * shortcut-store.ts) -- the `disabled` IDL property reflects only the
+ * element's own `disabled` content attribute, never inheritance from an
+ * enclosing fieldset. The `:disabled` selector covers both cases, and
+ * correctly does NOT match a control inside that fieldset's first
+ * `<legend>`, which fieldset-disabling explicitly exempts.
+ */
+function isElementDisabled(element: Element): boolean {
+  if (disabledFromElement(element)) return true;
+  try {
+    return element.matches(":disabled");
+  } catch {
+    // `matches` can be missing on an exotic element type. Nothing more to
+    // check in that case.
+    return false;
+  }
+}
+
+// ShortcutCommand renders a button and adds registration, aria-keyshortcuts,
+// and the click bridge. It deliberately does NOT call useCommand.
+//
+// Calling it would create a duplicate-hook problem under `render`
+// composition, because <MenuItem render={<ShortcutCommand />}> would run
+// useCommand twice. Not calling it also means a `disabled` prop here would
+// not disable the element, unlike every other component in the library,
+// which is why the prop is `enabled` instead. See decisions 11 and 48.
 const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
   function useShortcutCommandProps({
     store: storeProp,
-    keyShortcuts,
+    command,
+    keys,
     onTrigger: onTriggerProp,
-    target,
+    preventDefault,
+    scope: scopeProp,
+    enabled: enabledProp,
+    enabledInTextbox,
     ...props
   }) {
     const context = useShortcutContext();
     const store = storeProp ?? context;
     const ref = useRef<HTMLType>(null);
-    const disabled = disabledFromProps(props);
-    const platform = useShortcutPlatform();
-    const resolvedTarget = useResolvedTarget(target);
+    const scopeContext = useContext(ShortcutScopeContext);
+    const resolvedScope = useMemo(
+      () => resolveCommandScope(scopeProp, scopeContext),
+      [scopeProp, scopeContext],
+    );
     const hasTrigger = !!onTriggerProp;
     const onTrigger = useEvent(onTriggerProp);
-    // Depend on the stable `register` function rather than the registry
-    // object, whose identity changes on every registration.
-    const register = useContext(ShortcutDisclosureRegistryContext)?.register;
 
-    const texts = useMemo(
-      () =>
-        resolveKeyShortcuts(keyShortcuts, platform).map(
-          (shortcut) => shortcut.text,
-        ),
-      [keyShortcuts, platform],
-    );
-
-    useEffect(() => {
-      return store.registerCommand({
-        keyShortcuts,
-        disabled,
-        onTrigger: hasTrigger ? onTrigger : undefined,
-        element: () => ref.current,
-        target: resolvedTarget,
-      });
-    }, [store, keyShortcuts, disabled, hasTrigger, onTrigger, resolvedTarget]);
-
-    useEffect(() => {
-      if (!register) return;
-      if (!texts.length) return;
-      return register(texts);
-    }, [register, texts]);
-
-    // `aria-keyshortcuts` must only describe shortcuts that are actually
-    // available, so a shortcut vetoed within reach of this command is dropped.
-    // A veto in a sibling scope can never suppress this one, so availability
-    // depends on where the element sits and can only be read after mount. The
-    // first render keeps every shortcut, which matches the server markup and
-    // hydrates cleanly, and the effect corrects it before paint. Kept as a
-    // string so the value stays referentially stable.
-    const [availableKeyShortcuts, setAvailableKeyShortcuts] = useState(() =>
-      texts.join(" "),
-    );
-
-    useSafeLayoutEffect(() => {
-      return sync(store, ["commands"], (state) => {
-        setAvailableKeyShortcuts(
-          texts
-            .filter((text) => isShortcutTextAvailable(state, text, ref.current))
-            .join(" "),
-        );
-      });
-    }, [store, texts]);
-
+    // Defaults to whether the rendered element is disabled, through
+    // disabledFromProps and disabledFromElement, so
+    // <MenuItem disabled render={<ShortcutCommand />}> needs no prop at all,
+    // and enabled={false} switches the shortcut off without touching the
+    // element. Deriving it also satisfies ARIA's MUST about disabled
+    // elements for free.
+    const propsDisabled = disabledFromProps(props);
     const [elementDisabled, setElementDisabled] = useState(false);
-
-    // A control disabled through an ancestor fieldset keeps `disabled === false`
-    // in props, so the attribute has to follow the DOM instead. The first render
-    // still emits the attribute, which keeps hydration markup identical to the
-    // server, and the layout effect corrects it before paint.
+    // The first render keeps the server-safe default; the layout effect
+    // corrects it before paint. Do NOT read ref.current inside a
+    // useStoreState selector for this: the selector re-runs on every state
+    // change and React warns "getSnapshot should be cached" when it returns
+    // a new value each time.
     useSafeLayoutEffect(() => {
       const element = ref.current;
-      if (!element) return;
-      const sync = () => setElementDisabled(!isShortcutElementEnabled(element));
-      sync();
-      const observer = new MutationObserver(sync);
-      observer.observe(element, {
-        attributes: true,
-        attributeFilter: ["disabled", "aria-disabled"],
-      });
-      // Any ancestor fieldset can disable the control, and nested fieldsets each
-      // toggle independently.
-      let fieldset = element.closest("fieldset");
-      while (fieldset) {
-        observer.observe(fieldset, {
-          attributes: true,
-          attributeFilter: ["disabled"],
-        });
-        fieldset = fieldset.parentElement?.closest("fieldset") ?? null;
-      }
-      return () => observer.disconnect();
-    }, []);
-
-    const onClickProp = props.onClick;
-
-    const onClick = useEvent((event: ReactMouseEvent<HTMLType>) => {
-      onClickProp?.(event);
-      if (event.defaultPrevented) return;
-      if (disabled) return;
-      // A shortcut-dispatched click already ran this command, so bridging it
-      // again would double-trigger every handler for the same shortcut.
-      if (isShortcutClickEvent(event.nativeEvent)) return;
-      store.triggerCommands(
-        keyShortcuts,
-        event.nativeEvent,
-        event.currentTarget,
-      );
+      setElementDisabled(!!element && isElementDisabled(element));
     });
+    const ownEnabled = enabledProp ?? !(propsDisabled || elementDisabled);
 
-    // A nested `Shortcut` must see the same availability the attribute uses, so
-    // `displayDisabled={false}` hides it inside a disabled fieldset too, and
-    // hides exactly the alternatives the attribute dropped.
+    // Registered eagerly enough to settle before paint, and re-registered
+    // (not updated) whenever an option changes.
+    useSafeLayoutEffect(() => {
+      return store.registerCommand({
+        command,
+        keys,
+        onTrigger: hasTrigger ? onTrigger : undefined,
+        preventDefault,
+        scope: resolvedScope,
+        enabled: ownEnabled,
+        enabledInTextbox,
+        element: () => ref.current,
+      });
+    }, [
+      store,
+      command,
+      keys,
+      hasTrigger,
+      onTrigger,
+      preventDefault,
+      resolvedScope,
+      ownEnabled,
+      enabledInTextbox,
+    ]);
+
+    // The command's effective `enabled` is the store's own effective value
+    // (already the AND of every ancestor) ANDed with this registration's own
+    // contribution -- the same gate the dispatcher itself applies.
+    const storeEnabled = useStoreState(store, "enabled");
+    const enabled = storeEnabled && ownEnabled;
+
+    // Hidden while the command's region is not focused, tracked through a
+    // document-level focusin/focusout pair so a focus change anywhere is
+    // seen, not just within this element's own subtree (a scope's region can
+    // include portalled descendants outside it).
+    const [inScope, setInScope] = useState(true);
+    useSafeLayoutEffect(() => {
+      const update = () => setInScope(isInScope(resolvedScope, scopeContext));
+      update();
+      document.addEventListener("focusin", update, true);
+      document.addEventListener("focusout", update, true);
+      return () => {
+        document.removeEventListener("focusin", update, true);
+        document.removeEventListener("focusout", update, true);
+      };
+    }, [resolvedScope, scopeContext]);
+
+    // Emit exactly one shortcut into aria-keyshortcuts. NVDA splits the
+    // platform shortcut property on TWO spaces, while ARIA specifies one, so
+    // a multi-shortcut value is mis-spoken.
+    const platform = useStoreState(store, "platform");
+    const namedKeys = useShortcutKeys({ command: command ?? "", store });
+    // An unnamed command has no override to apply -- there is no name to key
+    // one by -- so its declared `keys` is resolved directly.
+    const declaredKeys = useMemo(
+      () => (keys ? resolveKeys(keys, platform).map((r) => r.text) : []),
+      [keys, platform],
+    );
+    const resolvedKeys = command ? namedKeys : declaredKeys;
+    const first = resolvedKeys[0];
+    // Present exactly when the command's effective enabled is true.
+    // Independent of scope: out-of-scope is not disabled.
+    const ariaKeyShortcuts = enabled ? first : undefined;
+
     const commandContextValue = useMemo(
       () => ({
-        keyShortcuts,
-        disabled: disabled || elementDisabled,
-        availableKeyShortcuts,
+        command,
+        keys: resolvedKeys,
+        enabled,
+        inScope,
+        hasAriaKeyShortcuts: !!ariaKeyShortcuts,
       }),
-      [keyShortcuts, disabled, elementDisabled, availableKeyShortcuts],
+      [command, resolvedKeys, enabled, inScope, ariaKeyShortcuts],
     );
 
     props = useWrapElement(
@@ -279,17 +262,50 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
       [commandContextValue],
     );
 
+    // A click on a ShortcutCommand element runs the command the keyboard
+    // would have run, in the other direction (A8):
+    // 1. A click the dispatcher itself fired (or that this same bridge
+    //    already fired) is never re-bridged.
+    // 2 and 3. A genuine click runs the command's onTrigger, by name, from
+    //    the MERGED declaration -- a registration supplying only `command`,
+    //    like this one when there's no onTrigger prop, is a reference, and
+    //    store.runOnTrigger() bridges it to whichever registration under
+    //    that name declared the handler (A4, decision 3's "declare once,
+    //    reference anywhere"). An unnamed command has nothing to merge, so
+    //    it runs its own local onTrigger directly instead.
+    // 4. No element is ever activated here: the click already happened, so
+    //    firing another one -- even at this same element -- would either be
+    //    a redundant no-op or, worse, invoke a command the user never asked
+    //    for. store.runOnTrigger() never touches an element, which is what
+    //    keeps this direction from looping into the keyboard direction.
+    const onClickProp = props.onClick;
+    const onClick = useEvent((event: ReactMouseEvent<HTMLType>) => {
+      onClickProp?.(event);
+      if (event.defaultPrevented) return;
+      if (isShortcutClickEvent(event.nativeEvent)) return;
+      if (!enabled) return;
+      const shortcutEvent: ShortcutClickEvent = {
+        source: "click",
+        command,
+        keys: first ?? "",
+        target: event.currentTarget,
+        originalEvent: event.nativeEvent,
+      };
+      if (command) {
+        store.runOnTrigger(command, shortcutEvent);
+        return;
+      }
+      if (!hasTrigger) return;
+      onTrigger(shortcutEvent);
+    });
+
     props = {
-      "aria-keyshortcuts":
-        disabled || elementDisabled || !availableKeyShortcuts
-          ? undefined
-          : availableKeyShortcuts,
+      "aria-keyshortcuts": ariaKeyShortcuts,
+      "data-in-scope": inScope || undefined,
       ...props,
       ref: useMergeRefs(ref, props.ref),
       onClick,
     };
-
-    props = useCommand<TagName>(props);
 
     return props;
   },
@@ -297,20 +313,17 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
 
 /**
  * Renders a button that's activated by its keyboard shortcut and exposes it
- * through
- * [`aria-keyshortcuts`](https://w3c.github.io/aria/#aria-keyshortcuts).
+ * through [`aria-keyshortcuts`](https://w3c.github.io/aria/#aria-keyshortcuts).
  *
  * Without an
  * [`onTrigger`](https://ariakit.com/reference/shortcut-command#ontrigger)
  * callback, pressing the shortcut clicks the element. With it, only the
- * callback runs. Clicking the element also runs handler-only commands
- * registered for the same shortcuts. While the command is disabled, the
- * shortcut is unavailable and the attribute is removed.
+ * callback runs, and clicking the element also runs it.
  * @see https://ariakit.com/components/shortcut
  * @example
  * ```jsx
- * <ShortcutCommand keyShortcuts="mod+B" onClick={toggleBold}>
- *   Bold <Shortcut />
+ * <ShortcutCommand command="save" keys="mod+S" onClick={save}>
+ *   Save <Shortcut />
  * </ShortcutCommand>
  * ```
  */
@@ -322,8 +335,8 @@ export const ShortcutCommand = forwardRef(function ShortcutCommand(
 });
 
 export interface ShortcutCommandOptions<
-  T extends ElementType = TagName,
-> extends CommandOptions<T> {
+  _T extends ElementType = TagName,
+> extends Options {
   /**
    * Object returned by the
    * [`useShortcutStore`](https://ariakit.com/reference/use-shortcut-store)
@@ -333,24 +346,45 @@ export interface ShortcutCommandOptions<
    */
   store?: ShortcutStore;
   /**
-   * One or more space-separated shortcuts, such as `"mod+B"` or
-   * `"apple:Meta+Shift+T pc:Control+Alt+T"`. Each one is registered
-   * individually and all of them are exposed through `aria-keyshortcuts`.
+   * The command's identity. Optional: an unnamed command runs normally and
+   * opts out of the name-based features, which are display from elsewhere,
+   * the click bridge, `trigger()`, and remapping.
    */
-  keyShortcuts: string;
+  command?: string;
   /**
-   * Called when the shortcut is pressed. When provided, the element is not
-   * clicked.
+   * One or more shortcuts, space-separated, as in `aria-keyshortcuts`. A
+   * space means alternatives, not a sequence. Omit on a reference. `null`
+   * unbinds a command declared elsewhere.
    */
-  onTrigger?: (event: KeyboardEvent | MouseEvent) => void;
+  keys?: string | null;
   /**
-   * The focus scope this command belongs to. `undefined` inherits the closest
-   * [`ShortcutTarget`](https://ariakit.com/reference/shortcut-target), `null`
-   * opts out to the global scope, and a ref or element scopes the command to
-   * that element, whether or not it is also a
-   * [`ShortcutTarget`](https://ariakit.com/reference/shortcut-target).
+   * Called when the shortcut is pressed, or the element is clicked. When
+   * provided, the element is not clicked by the keyboard bridge.
    */
-  target?: RefObject<Element | null> | Element | null;
+  onTrigger?: (event: ShortcutEvent) => unknown;
+  /**
+   * Whether to stop the browser default once this command claims the key.
+   * @default true
+   */
+  preventDefault?: BooleanOrCallback<ShortcutEvent>;
+  /**
+   * The focus region this command belongs to. `undefined` inherits the
+   * closest [`ShortcutScope`](https://ariakit.com/reference/shortcut-scope),
+   * `null` opts out so the command is always in scope, and an element, a
+   * ref, or an array of either scopes the command to the union of those.
+   */
+  scope?: ShortcutScopeRef | ShortcutScopeRef[] | null;
+  /**
+   * Whether the command participates in dispatch at all. Defaults to
+   * whether the rendered element is disabled.
+   */
+  enabled?: boolean;
+  /**
+   * Whether the command still fires when the keystroke originates in a text
+   * field or a contenteditable.
+   * @default false for a bare printable key, true otherwise
+   */
+  enabledInTextbox?: BooleanOrCallback<ShortcutEvent>;
 }
 
 export type ShortcutCommandProps<T extends ElementType = TagName> = Props<

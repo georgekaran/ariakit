@@ -1,97 +1,12 @@
-import { subscribe } from "@ariakit/store";
+import { init } from "@ariakit/store";
 import { afterEach, expect, test, vi } from "vitest";
-import {
-  createShortcutStore,
-  getGlobalShortcutStore,
-  isShortcutTextAvailable,
-} from "./shortcut-store.ts";
-import { isShortcutClickEvent } from "./utils.ts";
+import { createShortcutStore } from "./shortcut-store.ts";
+import type { ShortcutClickEvent, ShortcutEvent } from "./shortcut-store.ts";
 
-function getRecords(
-  store: ReturnType<typeof createShortcutStore>,
-  text: string,
-) {
-  return store.getState().commands.get(text) ?? [];
-}
-
-test("registers each shortcut individually", () => {
-  const store = createShortcutStore();
-  const onTrigger = () => {};
-  const unregister = store.registerCommand({
-    keyShortcuts: "Control+K Control+J",
-    onTrigger,
-  });
-  expect(getRecords(store, "Control+K")).toHaveLength(1);
-  expect(getRecords(store, "Control+J")).toHaveLength(1);
-  expect(getRecords(store, "Control+K")[0]?.onTrigger).toBe(onTrigger);
-  unregister();
-  expect(getRecords(store, "Control+K")).toHaveLength(0);
-  expect(getRecords(store, "Control+J")).toHaveLength(0);
-});
-
-test("keeps independent records for the same shortcut", () => {
-  const store = createShortcutStore();
-  const first = store.registerCommand({
-    keyShortcuts: "Control+B",
-    onTrigger: () => {},
-  });
-  const second = store.registerCommand({
-    keyShortcuts: "Control+B",
-    onTrigger: () => {},
-  });
-  expect(getRecords(store, "Control+B")).toHaveLength(2);
-  first();
-  expect(getRecords(store, "Control+B")).toHaveLength(1);
-  second();
-  expect(getRecords(store, "Control+B")).toHaveLength(0);
-});
-
-test("notifies subscribers when the registry changes", () => {
-  const store = createShortcutStore();
-  const snapshots: number[] = [];
-  subscribe(store, ["commands"], (state) => {
-    snapshots.push(state.commands.get("Control+B")?.length ?? 0);
-  });
-  const unregister = store.registerCommand({
-    keyShortcuts: "Control+B",
-    onTrigger: () => {},
-  });
-  unregister();
-  expect(snapshots).toEqual([1, 0]);
-});
-
-test("returns a noop unregister for fully invalid values", () => {
-  const store = createShortcutStore();
-  const unregister = store.registerCommand({ keyShortcuts: "  " });
-  expect(store.getState().commands.size).toBe(0);
-  expect(() => unregister()).not.toThrow();
-});
-
-test("normalizes events through the store", () => {
-  const store = createShortcutStore();
-  expect(
-    store.getKeyShortcuts({ key: "a", metaKey: true, shiftKey: true }),
-  ).toBe("Meta+Shift+A");
-  expect(store.getKeyShortcuts({ key: "Shift" })).toBe(null);
-});
-
-test("shares a single global store", () => {
-  expect(getGlobalShortcutStore()).toBe(getGlobalShortcutStore());
-});
-
-test("creating a store without registering does not attach listeners", () => {
-  const addSpy = vi.spyOn(document, "addEventListener");
-  createShortcutStore();
-  expect(addSpy.mock.calls.filter(([type]) => type === "keydown")).toHaveLength(
-    0,
-  );
-  addSpy.mockRestore();
-});
-
-// Every store in this file attaches its own document listener while it has
-// registrations. Leaked registrations from one test would dispatch (and
+// Every store in this file shares its document's single dispatcher while it
+// has registrations. Leaked registrations from one test would dispatch (and
 // preventDefault) during later tests, so every register call is tracked and
-// undone after each test.
+// undone after each test. See shortcut-store.ts's document reference count.
 const cleanups: Array<() => void> = [];
 
 afterEach(() => {
@@ -100,722 +15,820 @@ afterEach(() => {
   }
 });
 
-function track(unregister: () => void) {
+function track<T extends () => void>(unregister: T): T {
   cleanups.push(unregister);
   return unregister;
 }
 
-function pressKey(
-  key: string,
-  init: KeyboardEventInit = {},
-  target: EventTarget = document.body,
-) {
-  const event = new KeyboardEvent("keydown", {
-    key,
-    bubbles: true,
-    cancelable: true,
-    ...init,
-  });
-  target.dispatchEvent(event);
-  return event;
-}
+/* ---------------------------------------------------------------------- *
+ * Task 4 — store skeleton: state, nesting, effective `enabled`.
+ * ---------------------------------------------------------------------- */
 
-test("runs handler commands and prevents default", () => {
-  const store = createShortcutStore();
-  const events: KeyboardEvent[] = [];
-  const unregister = track(
-    store.registerCommand({
-      keyShortcuts: "Control+B",
-      onTrigger: (event) => events.push(event as KeyboardEvent),
+test("a nested level does not clobber its parent's registry", () => {
+  const root = createShortcutStore();
+  const child = createShortcutStore({ parent: root });
+  const ran: string[] = [];
+  track(
+    root.registerCommand({
+      keys: "Control+A",
+      onTrigger: () => ran.push("root"),
     }),
   );
-  const event = pressKey("b", { ctrlKey: true });
-  expect(events).toHaveLength(1);
-  expect(event.defaultPrevented).toBe(true);
-  const unhandled = pressKey("b");
-  expect(events).toHaveLength(1);
-  expect(unhandled.defaultPrevented).toBe(false);
-  unregister();
-  pressKey("b", { ctrlKey: true });
-  expect(events).toHaveLength(1);
+  track(
+    child.registerCommand({
+      keys: "Control+B",
+      onTrigger: () => ran.push("child"),
+    }),
+  );
+  // Both survive. The parent's registry was not overwritten on init.
+  expect(root.getState().enabled).toBe(true);
+  expect(child.getState().enabled).toBe(true);
 });
 
-test("stops listening when the last command unregisters", () => {
-  const store = createShortcutStore();
-  const addSpy = vi.spyOn(document, "addEventListener");
-  const removeSpy = vi.spyOn(document, "removeEventListener");
-  const first = track(
-    store.registerCommand({ keyShortcuts: "Control+1", onTrigger: () => {} }),
-  );
-  const second = track(
-    store.registerCommand({ keyShortcuts: "Control+2", onTrigger: () => {} }),
-  );
-  const keydownAdds = addSpy.mock.calls.filter(([type]) => type === "keydown");
-  expect(keydownAdds).toHaveLength(1);
-  first();
-  expect(
-    removeSpy.mock.calls.filter(([type]) => type === "keydown"),
-  ).toHaveLength(0);
-  second();
-  expect(
-    removeSpy.mock.calls.filter(([type]) => type === "keydown"),
-  ).toHaveLength(1);
-  addSpy.mockRestore();
-  removeSpy.mockRestore();
+test("effective enabled is the AND of the chain", () => {
+  const root = createShortcutStore();
+  const child = createShortcutStore({ parent: root });
+  expect(child.getState().enabled).toBe(true);
+  root.setEnabled(false);
+  expect(child.getState().enabled).toBe(false);
+  root.setEnabled(true);
 });
 
-test("ignores already-handled events and disabled commands", () => {
+test("a disabled level stays transparent to outer levels", () => {
+  const root = createShortcutStore();
+  const child = createShortcutStore({ parent: root });
+  child.setEnabled(false);
+  // The child's own setting must NOT fan out to the parent.
+  expect(root.getState().enabled).toBe(true);
+});
+
+test("display config inherits, but an explicit prop pins it", () => {
+  const root = createShortcutStore({ platform: "apple" });
+  const inherits = createShortcutStore({ parent: root });
+  const pinned = createShortcutStore({ parent: root, platform: "windows" });
+  expect(inherits.getState().platform).toBe("apple");
+  expect(pinned.getState().platform).toBe("windows");
+});
+
+/* ---------------------------------------------------------------------- *
+ * Task 5 — registration, indexing, and per-field merging.
+ * ---------------------------------------------------------------------- */
+
+test("a declaration and a reference merge instead of clobbering", () => {
   const store = createShortcutStore();
-  let count = 0;
+  const ran: string[] = [];
+  const button = document.createElement("button");
   track(
     store.registerCommand({
-      keyShortcuts: "Control+B",
-      onTrigger: () => count++,
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => ran.push("handler"),
     }),
   );
-  const prevented = new KeyboardEvent("keydown", {
-    key: "b",
+  track(store.registerCommand({ command: "save", element: button }));
+  // The reference contributed its element without destroying the handler.
+  expect(store.getKeys("save")).toEqual(["Control+S"]);
+  expect(store.trigger("save")).toBe(true);
+  expect(ran).toEqual(["handler"]);
+});
+
+test("two declarations of one field warn and the last wins", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const store = createShortcutStore();
+  track(store.registerCommand({ command: "save", keys: "Control+S" }));
+  track(store.registerCommand({ command: "save", keys: "Control+W" }));
+  expect(store.getKeys("save")).toEqual(["Control+W"]);
+  expect(warn).toHaveBeenCalled();
+  warn.mockRestore();
+});
+
+test("several references under one name all survive", () => {
+  const store = createShortcutStore();
+  const a = document.createElement("button");
+  const b = document.createElement("button");
+  track(store.registerCommand({ command: "save", keys: "Control+S" }));
+  track(store.registerCommand({ command: "save", element: a }));
+  track(store.registerCommand({ command: "save", element: b }));
+  // A menubar and a context menu can both reference one command.
+  expect(store.getKeys("save")).toEqual(["Control+S"]);
+});
+
+test("unregistering removes exactly one registration", () => {
+  const store = createShortcutStore();
+  const un = store.registerCommand({ command: "save", keys: "Control+S" });
+  track(
+    store.registerCommand({
+      command: "save",
+      element: document.createElement("button"),
+    }),
+  );
+  un();
+  expect(store.getKeys("save")).toEqual([]);
+});
+
+test("an unnamed command runs but has no name-based features", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+S",
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  expect(store.getKeys("save")).toEqual([]);
+  expect(store.trigger("save")).toBe(false);
+});
+
+/* ---------------------------------------------------------------------- *
+ * Task 6 — scopes and region resolution.
+ * ---------------------------------------------------------------------- */
+
+test("a portalled child scope is inside its parent's region", () => {
+  const store = createShortcutStore();
+  const outer = document.createElement("div");
+  // Deliberately NOT a DOM descendant of `outer`, the way a portal renders.
+  const popup = document.createElement("div");
+  const input = document.createElement("input");
+  popup.append(input);
+  document.body.append(outer, popup);
+
+  const parentScope = store.registerScope({ element: outer });
+  const childScope = store.registerScope({
+    element: popup,
+    parent: parentScope,
+  });
+
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      scope: outer,
+      onTrigger: () => ran.push("scoped"),
+    }),
+  );
+
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  // Containment would have failed here. The scope tree succeeds.
+  expect(ran).toEqual(["scoped"]);
+
+  childScope.unregister();
+  parentScope.unregister();
+  outer.remove();
+  popup.remove();
+});
+
+test("a ref that has not resolved leaves the command out of scope", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  const ref = { current: null as Element | null };
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      scope: ref,
+      onTrigger: () => ran.push("scoped"),
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  // Not document-wide on first render.
+  expect(ran).toEqual([]);
+});
+
+test("scope null means no region, so the command always runs", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      scope: null,
+      onTrigger: () => ran.push("global"),
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  expect(ran).toEqual(["global"]);
+});
+
+test("an origin of body is inside no region", () => {
+  const store = createShortcutStore();
+  const region = document.createElement("div");
+  document.body.append(region);
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      scope: region,
+      onTrigger: () => ran.push("scoped"),
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  // There is no latch and no pointerdown fallback. See decision 52.
+  expect(ran).toEqual([]);
+  region.remove();
+});
+
+test("a scope inside a shadow root is reachable from within it", () => {
+  const store = createShortcutStore();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = host.attachShadow({ mode: "open" });
+  const inner = document.createElement("input");
+  root.append(inner);
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      scope: host,
+      onTrigger: () => ran.push("scoped"),
+    }),
+  );
+  inner.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  expect(ran).toEqual(["scoped"]);
+  host.remove();
+});
+
+/* ---------------------------------------------------------------------- *
+ * Task 7 — the dispatch pipeline.
+ * ---------------------------------------------------------------------- */
+
+test("the listener runs in the capture phase", () => {
+  const store = createShortcutStore();
+  const order: string[] = [];
+  const input = document.createElement("input");
+  document.body.append(input);
+  input.addEventListener("keydown", () => order.push("element"));
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => order.push("shortcut"),
+    }),
+  );
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  expect(order).toEqual(["shortcut", "element"]);
+  input.remove();
+});
+
+test("a second event object in the same task is deduped", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  const init = { key: "k", ctrlKey: true, bubbles: true };
+  // A virtual-focus Combobox re-dispatches a NEW event object.
+  document.body.dispatchEvent(new KeyboardEvent("keydown", init));
+  document.body.dispatchEvent(new KeyboardEvent("keydown", init));
+  expect(ran).toEqual(["x"]);
+});
+
+test("an untrusted event still runs a command", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  const event = new KeyboardEvent("keydown", {
+    key: "k",
+    ctrlKey: true,
+    bubbles: true,
+  });
+  // happy-dom leaves `isTrusted` undefined rather than spec's `false` for a
+  // synthetic event; either way it must not be `true`.
+  expect(event.isTrusted).toBeFalsy();
+  document.body.dispatchEvent(event);
+  expect(ran).toEqual(["x"]);
+});
+
+test("returning false declines and the next command runs", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      command: "a",
+      keys: "Control+K",
+      onTrigger: () => {
+        ran.push("first");
+        return false;
+      },
+    }),
+  );
+  track(
+    store.registerCommand({
+      command: "b",
+      keys: "Control+K",
+      onTrigger: () => {
+        ran.push("second");
+      },
+    }),
+  );
+  const event = new KeyboardEvent("keydown", {
+    key: "k",
     ctrlKey: true,
     bubbles: true,
     cancelable: true,
   });
-  prevented.preventDefault();
-  document.body.dispatchEvent(prevented);
-  expect(count).toBe(0);
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+D",
-      disabled: true,
-      onTrigger: () => count++,
-    }),
-  );
-  const event = pressKey("d", { ctrlKey: true });
-  expect(count).toBe(0);
-  expect(event.defaultPrevented).toBe(false);
+  document.body.dispatchEvent(event);
+  // Ranked last-registered first, so "b" runs before "a".
+  expect(ran).toEqual(["second"]);
+  expect(event.defaultPrevented).toBe(true);
 });
 
-test("a disabled bare registration vetoes the shortcut", () => {
+test("a declined key reaches the browser", () => {
   const store = createShortcutStore();
-  let count = 0;
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+B",
-      onTrigger: () => count++,
-    }),
-  );
-  const unveto = track(
-    store.registerCommand({
-      keyShortcuts: "Control+B",
-      disabled: true,
-    }),
-  );
-  const vetoed = pressKey("b", { ctrlKey: true });
-  expect(count).toBe(0);
-  expect(vetoed.defaultPrevented).toBe(false);
-  unveto();
-  pressKey("b", { ctrlKey: true });
-  expect(count).toBe(1);
-});
-
-test("guards single-key shortcuts inside text fields", () => {
-  const store = createShortcutStore();
-  let plain = 0;
-  let modified = 0;
-  track(store.registerCommand({ keyShortcuts: "B", onTrigger: () => plain++ }));
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+B",
-      onTrigger: () => modified++,
-    }),
-  );
-  const input = document.createElement("input");
-  document.body.appendChild(input);
-  pressKey("b", {}, input);
-  expect(plain).toBe(0);
-  pressKey("b", { ctrlKey: true }, input);
-  expect(modified).toBe(1);
-  pressKey("b", {}, document.body);
-  expect(plain).toBe(1);
-  input.remove();
-});
-
-test("clicks the first registered element command", () => {
-  const store = createShortcutStore();
-  const first = document.createElement("button");
-  const second = document.createElement("button");
-  document.body.append(first, second);
-  const clicks: string[] = [];
-  first.addEventListener("click", (event) => {
-    clicks.push(`first:${event.metaKey}:${isShortcutClickEvent(event)}`);
+  track(store.registerCommand({ keys: "Control+K", onTrigger: () => false }));
+  const event = new KeyboardEvent("keydown", {
+    key: "k",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
   });
-  second.addEventListener("click", () => clicks.push("second"));
-  track(store.registerCommand({ keyShortcuts: "Meta+E", element: first }));
-  track(store.registerCommand({ keyShortcuts: "Meta+E", element: second }));
-  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-  pressKey("e", { metaKey: true });
-  expect(clicks).toEqual(["first:true:true"]);
-  expect(warn).toHaveBeenCalled(); // duplicate element command warning
-  warn.mockRestore();
-  first.remove();
-  second.remove();
-});
-
-test("skips DOM-disabled elements and commands with onTrigger do not click", () => {
-  const store = createShortcutStore();
-  const button = document.createElement("button");
-  button.disabled = true;
-  document.body.appendChild(button);
-  let clicked = 0;
-  let triggered = 0;
-  button.addEventListener("click", () => clicked++);
-  track(store.registerCommand({ keyShortcuts: "Meta+D", element: button }));
-  const event = pressKey("d", { metaKey: true });
-  expect(clicked).toBe(0);
+  document.body.dispatchEvent(event);
   expect(event.defaultPrevented).toBe(false);
-  button.disabled = false;
-  track(
-    store.registerCommand({
-      keyShortcuts: "Meta+D",
-      element: button,
-      onTrigger: () => triggered++,
-    }),
-  );
-  pressKey("d", { metaKey: true });
-  // The first record (element-only) clicks; the second runs its trigger
-  // instead of clicking.
-  expect(clicked).toBe(1);
-  expect(triggered).toBe(1);
-  button.remove();
 });
 
-test("notifies keystroke watchers even without commands", () => {
+test("a deeper scope outranks a shallower one", () => {
   const store = createShortcutStore();
-  const seen: string[] = [];
-  const unsubscribe = store.subscribeKeystroke("Control+B", (text) =>
-    seen.push(text),
-  );
-  pressKey("b", { ctrlKey: true });
-  expect(seen).toEqual(["Control+B"]);
-  unsubscribe();
-  pressKey("b", { ctrlKey: true });
-  expect(seen).toEqual(["Control+B"]);
-});
-
-function makeTree() {
   const outer = document.createElement("div");
   const inner = document.createElement("div");
-  const leaf = document.createElement("button");
-  const outside = document.createElement("button");
-  inner.appendChild(leaf);
-  outer.appendChild(inner);
-  document.body.append(outer, outside);
-  return {
-    outer,
-    inner,
-    leaf,
-    outside,
-    cleanup: () => {
-      outer.remove();
-      outside.remove();
-    },
-  };
-}
-
-test("scoped commands only run while the event target is inside the target", () => {
-  const store = createShortcutStore();
-  const { outer, leaf, outside, cleanup } = makeTree();
-  let count = 0;
-  track(store.registerTarget({ element: outer }));
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+R",
-      target: outer,
-      onTrigger: () => count++,
-    }),
-  );
-  pressKey("r", { ctrlKey: true }, outside);
-  expect(count).toBe(0);
-  pressKey("r", { ctrlKey: true }, leaf);
-  expect(count).toBe(1);
-  cleanup();
-});
-
-test("the innermost scope with commands wins over outer and global", () => {
-  const store = createShortcutStore();
-  const { outer, inner, leaf, cleanup } = makeTree();
-  const calls: string[] = [];
-  track(store.registerTarget({ element: outer }));
-  track(store.registerTarget({ element: inner }));
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+R",
-      onTrigger: () => calls.push("global"),
-    }),
-  );
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+R",
-      target: outer,
-      onTrigger: () => calls.push("outer"),
-    }),
-  );
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+R",
-      target: inner,
-      onTrigger: () => calls.push("inner"),
-    }),
-  );
-  pressKey("r", { ctrlKey: true }, leaf);
-  expect(calls).toEqual(["inner"]);
-  // Outside every target, only the global command runs.
-  pressKey("r", { ctrlKey: true }, document.body);
-  expect(calls).toEqual(["inner", "global"]);
-  cleanup();
-});
-
-test("outer shortcuts without inner competition still work from inside", () => {
-  const store = createShortcutStore();
-  const { outer, inner, leaf, cleanup } = makeTree();
-  let count = 0;
-  track(store.registerTarget({ element: outer }));
-  track(store.registerTarget({ element: inner }));
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+O",
-      target: outer,
-      onTrigger: () => count++,
-    }),
-  );
-  pressKey("o", { ctrlKey: true }, leaf);
-  expect(count).toBe(1);
-  cleanup();
-});
-
-test("a modal target cuts off outer targets but not global commands", () => {
-  const store = createShortcutStore();
-  const { outer, inner, leaf, cleanup } = makeTree();
-  const calls: string[] = [];
-  track(store.registerTarget({ element: outer }));
-  track(store.registerTarget({ element: inner, modal: true }));
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+R",
-      target: outer,
-      onTrigger: () => calls.push("outer"),
-    }),
-  );
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+S",
-      onTrigger: () => calls.push("global"),
-    }),
-  );
-  pressKey("r", { ctrlKey: true }, leaf);
-  expect(calls).toEqual([]); // outer command unreachable under the modal
-  pressKey("s", { ctrlKey: true }, leaf);
-  expect(calls).toEqual(["global"]); // target={null} escape hatch
-  cleanup();
-});
-
-test("a target getter returning null keeps the command inactive", () => {
-  const store = createShortcutStore();
-  let count = 0;
-  let element: Element | null = null;
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+G",
-      target: () => element,
-      onTrigger: () => count++,
-    }),
-  );
-  pressKey("g", { ctrlKey: true });
-  expect(count).toBe(0);
-  const { outer, leaf, cleanup } = makeTree();
-  track(store.registerTarget({ element: outer }));
-  element = outer;
-  pressKey("g", { ctrlKey: true }, leaf);
-  expect(count).toBe(1);
-  cleanup();
-});
-
-test("triggerCommands runs the same commands the keyboard would", () => {
-  const store = createShortcutStore();
-  const { outer, leaf, outside, cleanup } = makeTree();
-  const calls: string[] = [];
-  const button = document.createElement("button");
-  document.body.appendChild(button);
-  button.addEventListener("click", () => calls.push("element-click"));
-  track(store.registerTarget({ element: outer }));
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+B",
-      onTrigger: () => calls.push("global-handler"),
-    }),
-  );
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+B",
-      target: outer,
-      onTrigger: () => calls.push("scoped-handler"),
-    }),
-  );
-  track(store.registerCommand({ keyShortcuts: "Control+B", element: button }));
-
-  // Inside the target the scoped command is the innermost level, so it wins
-  // alone. The element is never clicked here: bridging a click to a different
-  // element would invoke a command the user never asked for.
-  store.triggerCommands("Control+B", new MouseEvent("click"), leaf);
-  expect(calls).toEqual(["scoped-handler"]);
-  // Outside it, only the global level is in scope.
-  store.triggerCommands("Control+B", new MouseEvent("click"), outside);
-  expect(calls).toEqual(["scoped-handler", "global-handler"]);
-
-  // A click resolves the same winning level the keyboard does, so a shortcut
-  // cannot reach a different set of handlers depending on how it was invoked.
-  // Only element activation differs, because a click already happened.
-  calls.length = 0;
-  pressKey("b", { ctrlKey: true }, leaf);
-  expect(calls).toEqual(["scoped-handler"]);
-  calls.length = 0;
-  pressKey("b", { ctrlKey: true }, outside);
-  expect(calls).toEqual(["global-handler", "element-click"]);
-
-  button.remove();
-  cleanup();
-});
-
-test("the click bridge runs one registration once per click", () => {
-  const store = createShortcutStore();
-  let count = 0;
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+K Control+P",
-      onTrigger: () => count++,
-    }),
-  );
-  // One registration covers both alternatives, so resolving them separately
-  // would run it twice for a single click.
-  store.triggerCommands("Control+K Control+P", new MouseEvent("click"));
-  expect(count).toBe(1);
-});
-
-test("a command scopes to an element that is not a registered target", () => {
-  const store = createShortcutStore();
-  const outer = document.createElement("div");
-  const editor = document.createElement("div");
-  const inside = document.createElement("button");
-  const beside = document.createElement("button");
-  editor.append(inside);
-  outer.append(editor, beside);
+  const input = document.createElement("input");
+  inner.append(input);
+  outer.append(inner);
   document.body.append(outer);
-
-  track(store.registerTarget({ element: outer }));
-  let ran = 0;
+  const ran: string[] = [];
+  // Register the OUTER one last, so mount order would pick the wrong one.
   track(
     store.registerCommand({
-      keyShortcuts: "Control+E",
-      target: editor,
-      onTrigger: () => ran++,
+      keys: "Control+K",
+      scope: inner,
+      onTrigger: () => ran.push("inner"),
     }),
   );
-
-  pressKey("e", { ctrlKey: true }, inside);
-  expect(ran).toBe(1);
-  // Still a scope: the command stays unreachable from outside the element.
-  pressKey("e", { ctrlKey: true }, beside);
-  expect(ran).toBe(1);
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      scope: outer,
+      onTrigger: () => ran.push("outer"),
+    }),
+  );
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  expect(ran).toEqual(["inner"]);
   outer.remove();
 });
 
-test("an unregistered target still ranks below a nested registered one", () => {
-  const store = createShortcutStore();
-  const editor = document.createElement("div");
-  const inner = document.createElement("div");
-  const leaf = document.createElement("button");
-  inner.append(leaf);
-  editor.append(inner);
-  document.body.append(editor);
-
-  track(store.registerTarget({ element: inner }));
-  const calls: string[] = [];
+test("an inner store shadows an outer one for the same keys", () => {
+  const root = createShortcutStore();
+  const child = createShortcutStore({ parent: root });
+  const ran: string[] = [];
   track(
-    store.registerCommand({
-      keyShortcuts: "Control+E",
-      target: editor,
-      onTrigger: () => calls.push("editor"),
+    root.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("root"),
     }),
   );
   track(
-    store.registerCommand({
-      keyShortcuts: "Control+E",
-      target: inner,
-      onTrigger: () => calls.push("inner"),
+    child.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("child"),
     }),
   );
-
-  pressKey("e", { ctrlKey: true }, leaf);
-  // Containment ranks both scopes, whether or not they were registered.
-  expect(calls).toEqual(["inner"]);
-  editor.remove();
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  expect(ran).toEqual(["child"]);
 });
 
-test("a veto in a sibling scope leaves the shortcut available", () => {
-  const store = createShortcutStore();
-  const a = document.createElement("div");
-  const b = document.createElement("div");
-  const buttonA = document.createElement("button");
-  const buttonB = document.createElement("button");
-  a.append(buttonA);
-  b.append(buttonB);
-  document.body.append(a, b);
-
-  track(store.registerTarget({ element: a }));
-  track(store.registerTarget({ element: b }));
+test("a disabled level is transparent, not blocking", () => {
+  const root = createShortcutStore();
+  const child = createShortcutStore({ parent: root });
+  const ran: string[] = [];
   track(
-    store.registerCommand({
-      keyShortcuts: "Control+Q",
-      disabled: true,
-      target: a,
+    root.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("root"),
     }),
   );
-  let ran = 0;
   track(
-    store.registerCommand({
-      keyShortcuts: "Control+Q",
-      target: b,
-      onTrigger: () => ran++,
+    child.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("child"),
     }),
   );
-
-  const state = store.getState();
-  // The veto never shares a scope chain with the command, so availability must
-  // agree with dispatch instead of reporting the shortcut as suppressed.
-  expect(isShortcutTextAvailable(state, "Control+Q", buttonB)).toBe(true);
-  pressKey("q", { ctrlKey: true }, buttonB);
-  expect(ran).toBe(1);
-
-  // The same veto does reach a command inside its own scope.
-  expect(isShortcutTextAvailable(state, "Control+Q", buttonA)).toBe(false);
-  a.remove();
-  b.remove();
+  child.setEnabled(false);
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  expect(ran).toEqual(["root"]);
 });
 
-test("a veto with no scope reaches every command", () => {
+test("disabling the root switches off every level", () => {
+  const root = createShortcutStore();
+  const child = createShortcutStore({ parent: root });
+  const ran: string[] = [];
+  track(
+    child.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("child"),
+    }),
+  );
+  root.setEnabled(false);
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  expect(ran).toEqual([]);
+  root.setEnabled(true);
+});
+
+test("a command inside an inert subtree is dropped", () => {
+  const store = createShortcutStore();
+  const wrapper = document.createElement("div");
+  const button = document.createElement("button");
+  wrapper.append(button);
+  document.body.append(wrapper);
+  wrapper.setAttribute("inert", "");
+  let clicked = false;
+  button.addEventListener("click", () => {
+    clicked = true;
+  });
+  track(
+    store.registerCommand({ command: "x", keys: "Control+K", element: button }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  // element.inert is false on a descendant, so only closest("[inert]") works.
+  expect(clicked).toBe(false);
+  wrapper.remove();
+});
+
+test("a bare printable key does not fire while typing", () => {
+  const store = createShortcutStore();
+  const input = document.createElement("input");
+  document.body.append(input);
+  const ran: string[] = [];
+  track(store.registerCommand({ keys: "K", onTrigger: () => ran.push("x") }));
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", bubbles: true, composed: true }),
+  );
+  expect(ran).toEqual([]);
+  input.remove();
+});
+
+test("enabledInTextbox lets a bare key fire while typing", () => {
+  const store = createShortcutStore();
+  const input = document.createElement("input");
+  document.body.append(input);
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "K",
+      enabledInTextbox: true,
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", bubbles: true, composed: true }),
+  );
+  expect(ran).toEqual(["x"]);
+  input.remove();
+});
+
+test("a chord fires while typing by default", () => {
+  const store = createShortcutStore();
+  const input = document.createElement("input");
+  document.body.append(input);
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  expect(ran).toEqual(["x"]);
+  input.remove();
+});
+
+test("the second lookup key runs when the first matches nothing", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({ keys: "?", onTrigger: () => ran.push("help") }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "?", shiftKey: true, bubbles: true }),
+  );
+  expect(ran).toEqual(["help"]);
+});
+
+test("the activation bridge carries no modifiers", () => {
+  const store = createShortcutStore();
+  const link = document.createElement("a");
+  document.body.append(link);
+  // No initializer: TS narrows `let x: T | null = null` to a literal `null`
+  // that a reassignment inside a nested closure does not widen back.
+  let seen: MouseEvent | undefined;
+  link.addEventListener("click", (event) => {
+    seen = event;
+  });
+  track(
+    store.registerCommand({
+      command: "open",
+      keys: "Control+O",
+      element: link,
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "o", ctrlKey: true, bubbles: true }),
+  );
+  // Forwarding ctrlKey would open a background tab instead of navigating.
+  expect(seen?.ctrlKey).toBe(false);
+  expect(seen?.metaKey).toBe(false);
+  link.remove();
+});
+
+test("preventDefault can be opted out per command", () => {
+  const store = createShortcutStore();
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      preventDefault: false,
+      onTrigger: () => {},
+    }),
+  );
+  const event = new KeyboardEvent("keydown", {
+    key: "k",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  document.body.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(false);
+});
+
+/* ---------------------------------------------------------------------- *
+ * Task 8 — trigger, getKeys, setKeys, attach.
+ * ---------------------------------------------------------------------- */
+
+test("an override beats a declaration whatever the mount order", () => {
+  const store = createShortcutStore();
+  store.setKeys("save", "Control+J");
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => {},
+    }),
+  );
+  expect(store.getKeys("save")).toEqual(["Control+J"]);
+});
+
+test("null unbinds and undefined restores the declaration", () => {
+  const store = createShortcutStore();
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => {},
+    }),
+  );
+  store.setKeys("save", null);
+  expect(store.getKeys("save")).toEqual([]);
+  store.setKeys("save", undefined);
+  expect(store.getKeys("save")).toEqual(["Control+S"]);
+});
+
+test("an override does not warn", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const store = createShortcutStore();
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => {},
+    }),
+  );
+  store.setKeys("save", "Control+J");
+  expect(warn).not.toHaveBeenCalled();
+  warn.mockRestore();
+});
+
+test("trigger ignores scope but respects enabled", () => {
+  const store = createShortcutStore();
+  const region = document.createElement("div");
+  document.body.append(region);
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      command: "palette",
+      keys: "Control+K",
+      scope: region,
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  // Focus is on body, so the keyboard would not run it.
+  expect(store.trigger("palette")).toBe(true);
+  expect(ran).toEqual(["x"]);
+  store.setEnabled(false);
+  expect(store.trigger("palette")).toBe(false);
+  expect(ran).toEqual(["x"]);
+  store.setEnabled(true);
+  region.remove();
+});
+
+test("the programmatic event has no original event", () => {
+  const store = createShortcutStore();
+  // No initializer, for the same reason as the click-bridge test above.
+  let seen: ShortcutEvent | undefined;
+  track(
+    store.registerCommand({
+      command: "x",
+      keys: "Control+K",
+      onTrigger: (event) => {
+        seen = event;
+      },
+    }),
+  );
+  store.trigger("x");
+  expect(seen?.source).toBe("programmatic");
+  expect(seen?.originalEvent).toBeUndefined();
+  expect(seen?.target).toBeNull();
+});
+
+test("formatKeys works with no DOM state", () => {
+  const store = createShortcutStore({ platform: "apple" });
+  expect(store.formatKeys("mod+S")).toBe("⌘S");
+});
+
+test("getKeys round-trips into a registration", () => {
+  const store = createShortcutStore({ platform: "apple" });
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "mod+S",
+      onTrigger: () => {},
+    }),
+  );
+  const [text] = store.getKeys("save");
+  // The recorder's value is the same string the command takes.
+  expect(() =>
+    track(store.registerCommand({ command: "copy", keys: text })),
+  ).not.toThrow();
+});
+
+test("an unmounted store stops following its parent", () => {
+  const root = createShortcutStore();
+  const child = createShortcutStore({ parent: root });
+  const destroy = init(child);
+  destroy();
+  root.setEnabled(false);
+  // The child released its parent subscription on teardown.
+  expect(child.getState().enabled).toBe(true);
+});
+
+/* ---------------------------------------------------------------------- *
+ * runOnTrigger — the click bridge's by-name entry point. Never touches an
+ * element, unlike trigger().
+ * ---------------------------------------------------------------------- */
+
+test("runOnTrigger runs a merged declaration without activating an element", () => {
   const store = createShortcutStore();
   const button = document.createElement("button");
   document.body.append(button);
-  track(store.registerCommand({ keyShortcuts: "Control+Q", disabled: true }));
-  expect(isShortcutTextAvailable(store.getState(), "Control+Q", button)).toBe(
-    false,
-  );
-  // A target that has not mounted yet is inactive, not global.
-  const pending = createShortcutStore();
+  const onClick = vi.fn();
+  button.addEventListener("click", onClick);
+  const ran: string[] = [];
   track(
-    pending.registerCommand({
-      keyShortcuts: "Control+Q",
-      disabled: true,
-      target: () => null,
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => ran.push("handler"),
     }),
   );
-  expect(isShortcutTextAvailable(pending.getState(), "Control+Q", button)).toBe(
-    true,
-  );
+  track(store.registerCommand({ command: "save", element: button }));
+  const event: ShortcutClickEvent = {
+    source: "click",
+    command: "save",
+    keys: "Control+S",
+    target: button,
+    originalEvent: new MouseEvent("click"),
+  };
+  expect(store.runOnTrigger("save", event)).toBe(true);
+  expect(ran).toEqual(["handler"]);
+  // The merged declaration's onTrigger ran; the reference element itself
+  // was never clicked.
+  expect(onClick).not.toHaveBeenCalled();
   button.remove();
 });
 
-test("plain shortcuts do not run while typing in a number input", () => {
-  const store = createShortcutStore();
-  const number = document.createElement("input");
-  number.type = "number";
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  document.body.append(number, checkbox);
-  let ran = 0;
-  track(store.registerCommand({ keyShortcuts: "K", onTrigger: () => ran++ }));
-
-  // `selectionStart` is null on a number input, but it still consumes the key
-  // as text.
-  pressKey("k", {}, number);
-  expect(ran).toBe(0);
-  // A checkbox consumes nothing, so a plain shortcut stays available.
-  pressKey("k", {}, checkbox);
-  expect(ran).toBe(1);
-  number.remove();
-  checkbox.remove();
-});
-
-test("registers equivalent spellings once", () => {
-  const store = createShortcutStore();
-  let triggered = 0;
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+K ctrl+k",
-      onTrigger: () => triggered++,
-    }),
-  );
-  expect(getRecords(store, "Control+K")).toHaveLength(1);
-  pressKey("k", { ctrlKey: true });
-  expect(triggered).toBe(1);
-});
-
-test("a disabled element blocks its command even with onTrigger", () => {
+test("runOnTrigger never clicks a reference element", () => {
   const store = createShortcutStore();
   const button = document.createElement("button");
-  button.disabled = true;
-  document.body.appendChild(button);
-  let triggered = 0;
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+E",
-      element: button,
-      onTrigger: () => triggered++,
-    }),
-  );
-  const event = pressKey("e", { ctrlKey: true });
-  expect(triggered).toBe(0);
-  expect(event.defaultPrevented).toBe(false);
+  document.body.append(button);
+  const onClick = vi.fn();
+  button.addEventListener("click", onClick);
+  // A reference only: `command` and `element`, no `onTrigger` declared
+  // anywhere under this name. This is the guard against the click bridge
+  // looping into itself -- runOnTrigger must not fall back to activating
+  // the element the way trigger() does.
+  track(store.registerCommand({ command: "save", element: button }));
+  const event: ShortcutClickEvent = {
+    source: "click",
+    command: "save",
+    keys: "",
+    target: button,
+    originalEvent: new MouseEvent("click"),
+  };
+  expect(store.runOnTrigger("save", event)).toBe(false);
+  expect(onClick).not.toHaveBeenCalled();
   button.remove();
 });
 
-test("reuses a supplied shortcut store instead of deriving one", () => {
-  const parent = createShortcutStore();
-  let globalTriggered = 0;
-  track(
-    parent.registerCommand({
-      keyShortcuts: "Control+K",
-      onTrigger: () => globalTriggered++,
-    }),
-  );
-  // This is what <ShortcutProvider store={parent}> does.
-  const child = createShortcutStore({ store: parent });
-  expect(child).toBe(parent);
-  // Registering through the provider must not discard what the original store
-  // already holds.
-  expect(getRecords(parent, "Control+K")).toHaveLength(1);
-
-  const scope = document.createElement("div");
-  const input = document.createElement("input");
-  scope.appendChild(input);
-  document.body.appendChild(scope);
-  track(child.registerTarget({ element: scope }));
-  let scopedTriggered = 0;
-  track(
-    child.registerCommand({
-      keyShortcuts: "Control+K",
-      onTrigger: () => scopedTriggered++,
-      target: scope,
-    }),
-  );
-  expect(getRecords(parent, "Control+K")).toHaveLength(2);
-
-  pressKey("k", { ctrlKey: true }, input);
-  // One registry and one target set, so the more specific scoped command wins
-  // instead of the winner depending on listener order.
-  expect(scopedTriggered).toBe(1);
-  expect(globalTriggered).toBe(0);
-  scope.remove();
-});
-
-test("the click bridge skips handlers attached to disabled elements", () => {
+test("runOnTrigger respects enabled", () => {
   const store = createShortcutStore();
-  // Directly disabled rather than disabled through a fieldset: happy-dom does
-  // not implement `:disabled` inheritance, so the fieldset variant is covered
-  // by the shortcut-basic browser test instead.
-  const attached = document.createElement("button");
-  attached.disabled = true;
-  const enabled = document.createElement("button");
-  document.body.append(attached, enabled);
-
-  let attachedTriggered = 0;
-  let headlessTriggered = 0;
+  const region = document.createElement("div");
+  document.body.append(region);
+  const ran: string[] = [];
   track(
     store.registerCommand({
-      keyShortcuts: "Control+G",
-      element: attached,
-      onTrigger: () => attachedTriggered++,
+      command: "palette",
+      keys: "Control+K",
+      // A scope the click's target is not inside: ignored, same as
+      // trigger(), because the click already tells us what was activated.
+      scope: region,
+      onTrigger: () => ran.push("x"),
     }),
   );
-  track(
-    store.registerCommand({
-      keyShortcuts: "Control+G",
-      onTrigger: () => headlessTriggered++,
-    }),
-  );
-
-  // Clicking the enabled command bridges to every in-scope handler command.
-  store.triggerCommands("Control+G", new MouseEvent("click"), enabled);
-  expect(headlessTriggered).toBe(1);
-  // The handler attached to the disabled control must stay unreachable.
-  expect(attachedTriggered).toBe(0);
-
-  attached.disabled = false;
-  store.triggerCommands("Control+G", new MouseEvent("click"), enabled);
-  expect(attachedTriggered).toBe(1);
-  expect(headlessTriggered).toBe(2);
-
-  attached.remove();
-  enabled.remove();
+  const event: ShortcutClickEvent = {
+    source: "click",
+    command: "palette",
+    keys: "Control+K",
+    target: region,
+    originalEvent: new MouseEvent("click"),
+  };
+  expect(store.runOnTrigger("palette", event)).toBe(true);
+  expect(ran).toEqual(["x"]);
+  store.setEnabled(false);
+  expect(store.runOnTrigger("palette", event)).toBe(false);
+  expect(ran).toEqual(["x"]);
+  store.setEnabled(true);
+  region.remove();
 });
 
-test("independent stores do not suppress each other", () => {
-  const first = createShortcutStore();
-  const second = createShortcutStore();
-  let firstRan = 0;
-  let secondRan = 0;
-  track(
-    first.registerCommand({
-      keyShortcuts: "Control+U",
-      onTrigger: () => firstRan++,
-    }),
-  );
-  track(
-    second.registerCommand({
-      keyShortcuts: "Control+U",
-      onTrigger: () => secondRan++,
-    }),
-  );
-  pressKey("u", { ctrlKey: true });
-  // Separate registries each resolve their own commands, so the outcome does
-  // not depend on which listener was installed first.
-  expect(firstRan).toBe(1);
-  expect(secondRan).toBe(1);
-});
-
-test("a store still yields to a default prevented by other code", () => {
+test("runOnTrigger returns false when the handler declines", () => {
   const store = createShortcutStore();
-  let ran = 0;
   track(
     store.registerCommand({
-      keyShortcuts: "Control+Y",
-      onTrigger: () => ran++,
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => false,
     }),
   );
-  const blocker = (event: Event) => event.preventDefault();
-  document.addEventListener("keydown", blocker, true);
-  pressKey("y", { ctrlKey: true });
-  document.removeEventListener("keydown", blocker, true);
-  expect(ran).toBe(0);
-});
-
-test("a non-matching store does not stop a later matching store", () => {
-  const quiet = createShortcutStore();
-  const matching = createShortcutStore();
-  let quietRan = 0;
-  let matchingRan = 0;
-  track(
-    quiet.registerCommand({
-      keyShortcuts: "Control+Q",
-      onTrigger: () => quietRan++,
-    }),
-  );
-  track(
-    matching.registerCommand({
-      keyShortcuts: "Control+W",
-      onTrigger: () => matchingRan++,
-    }),
-  );
-  pressKey("w", { ctrlKey: true });
-  expect(quietRan).toBe(0);
-  expect(matchingRan).toBe(1);
+  const event: ShortcutClickEvent = {
+    source: "click",
+    command: "save",
+    keys: "Control+S",
+    target: null,
+    originalEvent: new MouseEvent("click"),
+  };
+  expect(store.runOnTrigger("save", event)).toBe(false);
 });

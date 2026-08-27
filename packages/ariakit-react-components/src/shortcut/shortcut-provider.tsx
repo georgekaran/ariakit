@@ -1,44 +1,32 @@
 import type { ReactNode } from "react";
-import type { ShortcutGlyphs } from "./shortcut-context.tsx";
-import {
-  ShortcutContextProvider,
-  ShortcutGlyphsContext,
-} from "./shortcut-context.tsx";
+import { ShortcutContextProvider } from "./shortcut-context.tsx";
 import type { ShortcutStoreProps } from "./shortcut-store.ts";
 import { useShortcutStore } from "./shortcut-store.ts";
 
 /**
- * Provides a shortcut store to
- * [Shortcut](https://ariakit.com/components/shortcut) components.
+ * Provides a shortcut store to its descendants.
  *
- * Commands registered without a provider fall back to a shared global store, so
- * this component is only needed to give a subtree its own command registry or to
- * configure [`glyphs`](https://ariakit.com/reference/shortcut-provider#glyphs).
+ * Levels nest through the React tree. An inner level that claims the same keys
+ * shadows an outer one, and `enabled` is the AND of the whole chain, so the
+ * root is a real master switch.
  *
- * A provider separates registrations, not keystrokes. Each store resolves its
- * own commands from the same keydown, so the same shortcut registered under two
- * providers runs in both. This keeps the outcome from depending on which store
- * mounted first. Use
- * [`ShortcutTarget`](https://ariakit.com/reference/shortcut-target) to make a
- * shortcut depend on where focus is.
+ * Commands registered with no provider fall back to a shared global store, so
+ * this component is only needed to give a subtree its own level, to configure
+ * display, or to carry the user's remapping.
+ *
  * @see https://ariakit.com/components/shortcut
  * @example
  * ```jsx
- * <ShortcutProvider>
- *   <ShortcutCommand keyShortcuts="mod+B">Bold</ShortcutCommand>
+ * <ShortcutProvider enabled={prefs.shortcuts} keys={prefs.keymap}>
+ *   <ShortcutCommand command="save" keys="mod+S" onClick={save}>
+ *     Save <Shortcut />
+ *   </ShortcutCommand>
  * </ShortcutProvider>
  * ```
  */
 export function ShortcutProvider(props: ShortcutProviderProps = {}) {
-  const store = useShortcutStore(props);
-  let children = props.children;
-  if (props.glyphs) {
-    children = (
-      <ShortcutGlyphsContext.Provider value={props.glyphs}>
-        {children}
-      </ShortcutGlyphsContext.Provider>
-    );
-  }
+  const { children, ...storeProps } = props;
+  const store = useShortcutStore(storeProps);
   return (
     <ShortcutContextProvider value={store}>{children}</ShortcutContextProvider>
   );
@@ -46,14 +34,4 @@ export function ShortcutProvider(props: ShortcutProviderProps = {}) {
 
 export interface ShortcutProviderProps extends ShortcutStoreProps {
   children?: ReactNode;
-  /**
-   * Symbols rendered for shortcut keys by descendant
-   * [`Shortcut`](https://ariakit.com/reference/shortcut) components. Individual
-   * components can override these.
-   * @example
-   * ```jsx
-   * <ShortcutProvider glyphs={{ apple: { Meta: "⌘", "+": "" } }}>
-   * ```
-   */
-  glyphs?: ShortcutGlyphs;
 }

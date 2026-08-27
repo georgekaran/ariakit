@@ -1,77 +1,154 @@
 import { expect, test, vi } from "vitest";
 import {
   fireShortcutClickEvent,
-  getEventKeyShortcuts,
+  getEventLookupKeys,
   isShortcutClickEvent,
-  resolveKeyShortcuts,
+  resolveKeys,
 } from "./utils.ts";
 
 test("resolves platform-specific shortcuts", () => {
-  expect(resolveKeyShortcuts("apple:Meta+R pc:control+r", "apple")).toEqual([
+  expect(resolveKeys("apple:Meta+R pc:control+r", "apple")).toEqual([
     { text: "Meta+R", keys: ["Meta", "R"] },
   ]);
-  expect(resolveKeyShortcuts("apple:Meta+R pc:control+r", "pc")).toEqual([
+  expect(resolveKeys("apple:Meta+R pc:control+r", "windows")).toEqual([
     { text: "Control+R", keys: ["Control", "R"] },
   ]);
 });
 
 test("resolves the mod alias per platform", () => {
-  expect(resolveKeyShortcuts("mod+K", "apple")[0]?.text).toBe("Meta+K");
-  expect(resolveKeyShortcuts("mod+K", "pc")[0]?.text).toBe("Control+K");
+  expect(resolveKeys("mod+K", "apple")[0]?.text).toBe("Meta+K");
+  expect(resolveKeys("mod+K", "windows")[0]?.text).toBe("Control+K");
 });
 
-test("canonicalizes modifier order, aliases, and key casing", () => {
-  expect(resolveKeyShortcuts("shift+cmd+a", "apple")[0]?.text).toBe(
-    "Meta+Shift+A",
-  );
-  expect(resolveKeyShortcuts("ctrl+alt+t", "pc")[0]?.text).toBe(
-    "Control+Alt+T",
-  );
-  expect(resolveKeyShortcuts("Control+escape", "pc")[0]?.text).toBe(
+test("canonicalizes modifier aliases and key casing", () => {
+  expect(resolveKeys("shift+cmd+a", "apple")[0]?.text).toBe("Shift+Meta+A");
+  expect(resolveKeys("opt+ctrl+t", "windows")[0]?.text).toBe("Control+Alt+T");
+  expect(resolveKeys("Control+escape", "windows")[0]?.text).toBe(
     "Control+Escape",
   );
-  expect(resolveKeyShortcuts("Control+Space Control+Plus", "pc")).toEqual([
+});
+
+test("resolves every alternative in one call", () => {
+  expect(resolveKeys("Control+Space Control+Plus", "windows")).toEqual([
     { text: "Control+Space", keys: ["Control", "Space"] },
     { text: "Control+Plus", keys: ["Control", "Plus"] },
   ]);
 });
 
 test("keeps unprefixed shortcuts on every platform", () => {
-  expect(resolveKeyShortcuts("F5", "apple")[0]?.text).toBe("F5");
-  expect(resolveKeyShortcuts("F5", "pc")[0]?.text).toBe("F5");
+  expect(resolveKeys("F5", "apple")[0]?.text).toBe("F5");
+  expect(resolveKeys("F5", "windows")[0]?.text).toBe("F5");
+  expect(resolveKeys("F5", "other")[0]?.text).toBe("F5");
 });
 
 test("skips invalid shortcuts with a dev warning", () => {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-  expect(resolveKeyShortcuts("Control+", "pc")).toEqual([]);
-  expect(resolveKeyShortcuts("Control", "pc")).toEqual([]);
-  expect(resolveKeyShortcuts("Control+A+B", "pc")).toEqual([]);
-  expect(resolveKeyShortcuts("Control+K mod", "pc")).toHaveLength(1);
+  expect(resolveKeys("Control+", "windows")).toEqual([]);
+  expect(resolveKeys("Control", "windows")).toEqual([]);
+  expect(resolveKeys("Control+A+B", "windows")).toEqual([]);
+  expect(resolveKeys("Control+K mod", "windows")).toHaveLength(1);
   expect(warn).toHaveBeenCalled();
   warn.mockRestore();
 });
 
-test("normalizes keyboard events", () => {
-  expect(getEventKeyShortcuts({ key: "Meta" })).toBe(null);
-  expect(getEventKeyShortcuts({ key: "a", metaKey: true })).toBe("Meta+A");
-  expect(
-    getEventKeyShortcuts({ key: "A", metaKey: true, shiftKey: true }),
-  ).toBe("Meta+Shift+A");
-  expect(getEventKeyShortcuts({ key: " ", ctrlKey: true })).toBe(
+test("deduplicates equivalent shortcut spellings", () => {
+  expect(resolveKeys("Control+K ctrl+k", "windows")).toEqual([
+    { text: "Control+K", keys: ["Control", "K"] },
+  ]);
+  // `mod` collapses into an explicit declaration on the platform it resolves
+  // to, and stays separate on the other one.
+  expect(resolveKeys("mod+K Control+K", "windows")).toHaveLength(1);
+  expect(resolveKeys("mod+K Control+K", "apple")).toHaveLength(2);
+});
+
+test("canonicalizes modifiers in Control, Alt, Shift, Meta order", () => {
+  expect(resolveKeys("mod+shift+A", "apple")[0]?.text).toBe("Shift+Meta+A");
+  expect(resolveKeys("shift+ctrl+alt+k", "windows")[0]?.text).toBe(
+    "Control+Alt+Shift+K",
+  );
+});
+
+test("resolves the platform group, not the display platform", () => {
+  expect(resolveKeys("apple:Meta+R pc:Control+R", "windows")[0]?.text).toBe(
+    "Control+R",
+  );
+  expect(resolveKeys("apple:Meta+R pc:Control+R", "other")[0]?.text).toBe(
+    "Control+R",
+  );
+});
+
+test("leaving a platform unbound is legal and silent", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  expect(resolveKeys("pc:Control+R", "apple")).toEqual([]);
+  expect(warn).not.toHaveBeenCalled();
+  warn.mockRestore();
+});
+
+test("names the joiner and the separator keys", () => {
+  expect(resolveKeys("Control+Plus", "windows")[0]?.text).toBe("Control+Plus");
+  expect(resolveKeys("Control+Space", "windows")[0]?.text).toBe(
     "Control+Space",
   );
-  expect(getEventKeyShortcuts({ key: "+", ctrlKey: true })).toBe(
+});
+
+test("rejects keys that report input-method state", () => {
+  expect(
+    getEventLookupKeys({ key: "Dead", code: "KeyE", altKey: true }),
+  ).toBeNull();
+  expect(getEventLookupKeys({ key: "Unidentified" })).toBeNull();
+  expect(getEventLookupKeys({ key: "a", isComposing: true })).toBeNull();
+  expect(getEventLookupKeys({ key: "a", keyCode: 229 })).toBeNull();
+});
+
+test("rejects AltGraph", () => {
+  expect(
+    getEventLookupKeys({
+      key: "e",
+      ctrlKey: true,
+      altKey: true,
+      getModifierState: (k) => k === "AltGraph",
+    }),
+  ).toBeNull();
+});
+
+test("rejects a lone modifier", () => {
+  for (const key of ["Meta", "Control", "Alt", "Shift", "CapsLock"]) {
+    expect(getEventLookupKeys({ key })).toBeNull();
+  }
+});
+
+test("produces a second lookup key for a shifted non-letter only", () => {
+  expect(getEventLookupKeys({ key: "?", shiftKey: true })).toEqual({
+    primary: "Shift+?",
+    secondary: "?",
+  });
+  expect(getEventLookupKeys({ key: "A", shiftKey: true })).toEqual({
+    primary: "Shift+A",
+    secondary: null,
+  });
+});
+
+test("falls back to code only for a non-Latin key", () => {
+  expect(getEventLookupKeys({ key: "и", code: "KeyB" })?.primary).toBe("B");
+  // A Latin key is trusted verbatim, so Dvorak mnemonics survive.
+  expect(getEventLookupKeys({ key: "z", code: "KeyY" })?.primary).toBe("Z");
+});
+
+test("folds case without breaking the German sharp s", () => {
+  expect(
+    getEventLookupKeys({ key: "p", metaKey: true, shiftKey: true })?.primary,
+  ).toBe("Shift+Meta+P");
+  // "ß".toUpperCase() is "SS", which is not a single key.
+  expect(getEventLookupKeys({ key: "ß" })?.primary).toBe("ß");
+});
+
+test("maps the separator and joiner characters through the key-name table", () => {
+  expect(getEventLookupKeys({ key: " ", ctrlKey: true })?.primary).toBe(
+    "Control+Space",
+  );
+  expect(getEventLookupKeys({ key: "+", ctrlKey: true })?.primary).toBe(
     "Control+Plus",
   );
-  // macOS Option+L produces "¬"; the code fallback rescues the letter.
-  expect(getEventKeyShortcuts({ key: "¬", code: "KeyL", altKey: true })).toBe(
-    "Alt+L",
-  );
-  // Shift+1 produces "!"; the code fallback rescues the digit.
-  expect(
-    getEventKeyShortcuts({ key: "!", code: "Digit1", shiftKey: true }),
-  ).toBe("Shift+1");
-  expect(getEventKeyShortcuts({ key: "Escape" })).toBe("Escape");
 });
 
 test("marks synthetic shortcut clicks", () => {
@@ -80,91 +157,26 @@ test("marks synthetic shortcut clicks", () => {
   element.addEventListener("click", (event) => {
     clickEvent = event;
   });
-  fireShortcutClickEvent(element, { metaKey: true });
+  fireShortcutClickEvent(element);
   expect(clickEvent).toBeDefined();
   expect(isShortcutClickEvent(clickEvent!)).toBe(true);
   expect(isShortcutClickEvent(new MouseEvent("click"))).toBe(false);
 });
 
-test("deduplicates equivalent shortcut spellings", () => {
-  expect(resolveKeyShortcuts("Control+K ctrl+k", "pc")).toEqual([
-    { text: "Control+K", keys: ["Control", "K"] },
-  ]);
-  // `mod` collapses into an explicit declaration on the platform it resolves
-  // to, and stays separate on the other one.
-  expect(resolveKeyShortcuts("mod+K Control+K", "pc")).toHaveLength(1);
-  expect(resolveKeyShortcuts("mod+K Control+K", "apple")).toHaveLength(2);
-});
-
-test("ignores AltGr text composition", () => {
-  // Windows reports AltGr as Control with Alt while composing "€".
-  expect(
-    getEventKeyShortcuts({
-      key: "€",
-      code: "KeyE",
-      ctrlKey: true,
-      altKey: true,
-      getModifierState: (key) => key === "AltGraph",
-    }),
-  ).toBe(null);
-  // The same physical combination without AltGr stays a shortcut.
-  expect(
-    getEventKeyShortcuts({
-      key: "€",
-      code: "KeyE",
-      ctrlKey: true,
-      altKey: true,
-      getModifierState: () => false,
-    }),
-  ).toBe("Control+Alt+E");
-  // A plain letter under AltGr stays a shortcut, so layouts that report
-  // AltGraph for Control+Alt keep working.
-  expect(
-    getEventKeyShortcuts({
-      key: "k",
-      code: "KeyK",
-      ctrlKey: true,
-      altKey: true,
-      getModifierState: (key) => key === "AltGraph",
-    }),
-  ).toBe("Control+Alt+K");
-});
-
-test("keeps the character the layout produced", () => {
-  // AZERTY places the key labelled "A" at the QWERTY "Q" position, so the
-  // physical code must not override the letter the layout reported.
-  expect(getEventKeyShortcuts({ key: "a", code: "KeyQ", altKey: true })).toBe(
-    "Alt+A",
-  );
-  expect(
-    getEventKeyShortcuts({ key: "1", code: "Digit1", shiftKey: true }),
-  ).toBe("Shift+1");
-});
-
-test("ignores keys that report input-method state", () => {
-  // Option+E on macOS starts an accent sequence. Physical-code recovery would
-  // otherwise read it as "Alt+E", and a command would cancel the accent.
-  expect(
-    getEventKeyShortcuts({ key: "Dead", code: "KeyE", altKey: true }),
-  ).toBe(null);
-  expect(getEventKeyShortcuts({ key: "Process", code: "KeyA" })).toBe(null);
-  expect(getEventKeyShortcuts({ key: "Unidentified", code: "KeyA" })).toBe(
-    null,
-  );
-});
-
-test("marks the synthetic click as composed", () => {
+test("marks the synthetic click as composed and carrying no modifiers", () => {
   const button = document.createElement("button");
   document.body.append(button);
   let seen: MouseEvent | undefined;
   button.addEventListener("click", (event) => {
     seen = event;
   });
-  fireShortcutClickEvent(button, { metaKey: true });
+  fireShortcutClickEvent(button);
   // Real clicks are composed, so a listener outside a shadow root observes
   // them. A synthetic click that is not composed would be missed there.
   expect(seen?.composed).toBe(true);
-  expect(seen?.metaKey).toBe(true);
+  // The modifiers in a binding such as "mod+O" belong to the shortcut, not
+  // to the click, so a caller with no eventInit produces a plain click.
+  expect(seen?.metaKey).toBe(false);
   expect(isShortcutClickEvent(seen!)).toBe(true);
   button.remove();
 });

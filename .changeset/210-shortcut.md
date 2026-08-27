@@ -6,32 +6,32 @@
 
 Shortcut
 
-New Shortcut components for registering, scoping, and displaying keyboard
-shortcuts wired to
+New Shortcut components for declaring, scoping, displaying, and remapping
+keyboard shortcuts wired to
 [`aria-keyshortcuts`](https://w3c.github.io/aria/#aria-keyshortcuts):
 [`Shortcut`](https://ariakit.com/reference/shortcut),
 [`ShortcutCommand`](https://ariakit.com/reference/shortcut-command),
 [`ShortcutProvider`](https://ariakit.com/reference/shortcut-provider),
-[`ShortcutTarget`](https://ariakit.com/reference/shortcut-target),
-[`ShortcutDisclosure`](https://ariakit.com/reference/shortcut-disclosure),
+[`ShortcutScope`](https://ariakit.com/reference/shortcut-scope),
+[`ShortcutInput`](https://ariakit.com/reference/shortcut-input),
 [`useShortcutCommand`](https://ariakit.com/reference/use-shortcut-command), and
 [`useShortcutStore`](https://ariakit.com/reference/use-shortcut-store).
 
-Shortcuts are declared as space-separated combinations like
-`apple:Meta+Shift+T pc:Control+Alt+T`, with a `mod` alias per platform, and
-each one is registered individually. Commands are global by default, scope to
-focus through `ShortcutTarget` (including nested and modal targets), work
-outside React through `createShortcutStore`, and display with configurable
+Shortcuts are declared as space-separated alternatives like
+`apple:Meta+Shift+T pc:Control+Alt+T`, with a `mod` alias per platform.
+Commands are global by default, scope to focus through `ShortcutScope`, remap
+live through the store's `keys` override, and work outside React through
+`createShortcutStore`, all while displaying with configurable
 platform-specific glyphs.
 
 ```tsx
 <ShortcutProvider glyphs={{ apple: { Meta: "⌘", "+": "" } }}>
-  <ShortcutTarget>
-    {/* Runs only while focus is inside the target. */}
-    <ShortcutCommand keyShortcuts="mod+B" onClick={toggleBold}>
+  <ShortcutScope>
+    {/* Runs only while focus is inside the scope. */}
+    <ShortcutCommand keys="mod+B" onClick={toggleBold}>
       Bold <Shortcut />
     </ShortcutCommand>
-  </ShortcutTarget>
+  </ShortcutScope>
 </ShortcutProvider>
 ```
 

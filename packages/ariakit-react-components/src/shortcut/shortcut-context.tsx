@@ -1,9 +1,14 @@
 import { getGlobalShortcutStore } from "@ariakit/components/shortcut/shortcut-store";
+import type { ShortcutScopeHandle } from "@ariakit/components/shortcut/shortcut-store";
 import { useStoreState } from "@ariakit/react-store";
 import { createStoreContext } from "@ariakit/react-utils";
-import type { Context, ReactNode, RefObject } from "react";
 import { createContext } from "react";
 import type { ShortcutStore } from "./shortcut-store.ts";
+
+export type {
+  ShortcutGlyphs,
+  ShortcutKeyNames,
+} from "@ariakit/components/shortcut/glyphs";
 
 const ctx = createStoreContext<ShortcutStore>();
 
@@ -30,9 +35,11 @@ function getGlobalReactStore(): ShortcutStore {
 }
 
 /**
- * Returns the shortcut store from the nearest shortcut provider. Unlike other
- * Ariakit contexts, this never returns `undefined`: without a provider it falls
- * back to a shared global store, so global shortcuts work with no setup.
+ * Returns the shortcut store from the nearest shortcut provider. Unlike every
+ * other context hook in the library, this NEVER returns `undefined`: without a
+ * provider it falls back to a shared global store, which is what makes global
+ * shortcuts work with no setup at all.
+ * @see decision 42
  * @example
  * function Command() {
  *   const store = useShortcutContext();
@@ -45,58 +52,40 @@ export function useShortcutContext(): ShortcutStore {
   return store ?? getGlobalReactStore();
 }
 
-export const useShortcutScopedContext = ctx.useScopedContext;
-
-export const useShortcutProviderContext = ctx.useProviderContext;
-
 export const ShortcutContextProvider = ctx.ContextProvider;
 
-export const ShortcutScopedContextProvider = ctx.ScopedContextProvider;
-
 /**
- * Symbols rendered for shortcut keys. Keys are canonical `KeyboardEvent.key`
- * names, plus `"+"` for the separator between keys. A nested `apple` or `pc`
- * object overrides the glyphs for that platform only.
- * @example
- * const glyphs: ShortcutGlyphs = {
- *   Control: "Ctrl",
- *   apple: { Meta: "⌘", "+": "" },
- * };
+ * Carries the enclosing scope handle, so `ShortcutScope` can nest under it and
+ * `ShortcutCommand` can inherit it as the default `scope`.
  */
-export type ShortcutGlyphs = Record<
-  string,
-  ReactNode | Record<string, ReactNode>
->;
-
-export const ShortcutGlyphsContext = createContext<ShortcutGlyphs | undefined>(
-  undefined,
-);
-
-export const ShortcutTargetContext = createContext<
-  RefObject<HTMLElement | null> | undefined
+export const ShortcutScopeContext = createContext<
+  ShortcutScopeHandle | undefined
 >(undefined);
 
 export interface ShortcutCommandContextValue {
-  keyShortcuts: string;
-  disabled: boolean;
+  /** The command's name, if it has one. */
+  command?: string;
+  /** The resolved shortcuts the command currently exposes, normalized. */
+  keys: string[];
   /**
-   * The normalized texts the command currently exposes through
-   * `aria-keyshortcuts`, space-separated. A nested
-   * [`Shortcut`](https://ariakit.com/reference/shortcut) reads availability from
-   * here, so what it displays cannot disagree with what the attribute claims.
+   * The command's effective `enabled`, already ANDed with the store's own
+   * effective `enabled`.
    */
-  availableKeyShortcuts: string;
+  enabled: boolean;
+  /** Whether the command's region currently contains focus. */
+  inScope: boolean;
+  /**
+   * Whether the command's element currently carries `aria-keyshortcuts`. A
+   * nested `Shortcut` hides itself from the accessible name when this is
+   * true, so a menu item isn't announced twice.
+   */
+  hasAriaKeyShortcuts: boolean;
 }
 
+/**
+ * Carries the enclosing command, provided by `ShortcutCommand`. A nested
+ * `Shortcut` with no props reads this.
+ */
 export const ShortcutCommandContext = createContext<
   ShortcutCommandContextValue | undefined
 >(undefined);
-
-export interface ShortcutDisclosureRegistryValue {
-  register: (texts: readonly string[]) => () => void;
-  shortcuts: readonly string[];
-}
-
-export const ShortcutDisclosureRegistryContext: Context<
-  ShortcutDisclosureRegistryValue | undefined
-> = createContext<ShortcutDisclosureRegistryValue | undefined>(undefined);

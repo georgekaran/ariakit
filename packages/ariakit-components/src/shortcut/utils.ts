@@ -1,13 +1,23 @@
 import { canUseDOM, isApple } from "@ariakit/utils";
 
 /**
- * The platform a shortcut is resolved for. Apple devices use the `Meta` key
- * where other platforms use `Control`.
+ * The platform a shortcut is displayed and detected for. Apple devices use
+ * the `Meta` key where other platforms use `Control`. There are three
+ * buckets here, rather than the two `ShortcutPlatformGroup` has, because
+ * `Meta` has three different names and glyphs across them: `⌘` on Apple,
+ * `Win` on Windows, and no consistent glyph on anything else.
  */
-export type ShortcutPlatform = "apple" | "pc";
+export type ShortcutPlatform = "apple" | "windows" | "other";
 
 /**
- * The minimal shape `getEventKeyShortcuts` needs. A native `KeyboardEvent`
+ * The two buckets a `keys` declaration can bind an alternative to. Only two
+ * exist, because only two answers exist to "does this platform use `Meta` or
+ * `Control` for its command key": `pc` covers both `"windows"` and `"other"`.
+ */
+export type ShortcutPlatformGroup = "apple" | "pc";
+
+/**
+ * The minimal shape `getEventLookupKeys` needs. A native `KeyboardEvent`
  * satisfies it, but a plain object works too, which makes the normalization
  * testable without a DOM.
  */
@@ -19,14 +29,24 @@ export interface KeyboardEventLike {
   key: string;
   /**
    * The [`KeyboardEvent.code`](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/code)
-   * value. Used to recover the declared key when a modifier replaces the
-   * character the key produces.
+   * value. Used to recover the declared key when a non-Latin layout replaces
+   * the character the key produces.
    */
   code?: string;
+  /**
+   * The legacy [`KeyboardEvent.keyCode`](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/keyCode)
+   * value. `229` signals that an input method is composing the keystroke.
+   */
+  keyCode?: number;
   metaKey?: boolean;
   ctrlKey?: boolean;
   altKey?: boolean;
   shiftKey?: boolean;
+  /**
+   * The [`KeyboardEvent.isComposing`](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/isComposing)
+   * value. `true` while an input method is composing the keystroke.
+   */
+  isComposing?: boolean;
   /**
    * The [`KeyboardEvent.getModifierState`](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/getModifierState)
    * method. Used to tell AltGr text composition apart from a `Control+Alt`
@@ -39,13 +59,31 @@ export interface KeyboardEventLike {
  * A single shortcut resolved for a specific platform.
  */
 export interface ResolvedShortcut {
-  /** Canonical normalized text, for example `"Meta+Shift+A"`. */
+  /** Canonical normalized text, for example `"Shift+Meta+A"`. */
   text: string;
-  /** Canonical keys in order, modifiers first: `["Meta", "Shift", "A"]`. */
+  /** Canonical keys in `Control, Alt, Shift, Meta` order, then the key. */
   keys: readonly string[];
 }
 
-const MODIFIERS = ["Meta", "Control", "Alt", "Shift"] as const;
+/**
+ * The lookup keys a `keydown` event produces. Registrations are indexed by
+ * these exact strings, so dispatch is a map read rather than a parse.
+ */
+export interface ShortcutLookupKeys {
+  /** Built from every modifier held. */
+  primary: string;
+  /**
+   * Built by dropping `Shift`. `null` unless `Shift` was held on a
+   * non-letter, since `"Shift+?"` also reads as `"?"`, but `"Shift+A"` does
+   * not read as `"A"`.
+   */
+  secondary: string | null;
+}
+
+// Canonical order everywhere except author input, which is free-order. This
+// is simultaneously the Apple HIG symbol order (⌃⌥⇧⌘), Windows accelerator
+// convention, and the form emitted into aria-keyshortcuts.
+const MODIFIERS = ["Control", "Alt", "Shift", "Meta"] as const;
 
 type Modifier = (typeof MODIFIERS)[number];
 
@@ -61,29 +99,23 @@ const MODIFIER_ALIASES: Record<string, Modifier> = {
   shift: "Shift",
 };
 
-// Keys whose keydown never produces a shortcut on its own.
-const MODIFIER_EVENT_KEYS = new Set<string>([
-  ...MODIFIERS,
-  "AltGraph",
+// A modifier pressed on its own, plus every other key whose keydown never
+// produces a shortcut by itself.
+const LONE_MODIFIER_KEYS = new Set<string>([
+  "Meta",
+  "Control",
+  "Alt",
+  "Shift",
+  "CapsLock",
+  "NumLock",
+  "ScrollLock",
   "Fn",
   "FnLock",
-  "Super",
   "Hyper",
+  "Super",
   "Symbol",
   "SymbolLock",
-]);
-
-// Keys that report input-method state instead of a key the user pressed.
-// `Dead` starts an accent sequence, such as Option+E on macOS, and `Process`
-// means an input method is consuming the keystroke. Matching either would run a
-// shortcut, and preventing the default would cancel the text being composed.
-// The first dead keydown still reports `isComposing: false`, so the composition
-// guard in the store cannot catch it. `Unidentified` names no key at all.
-// See https://www.w3.org/TR/uievents/#keys-dead
-const RESERVED_EVENT_KEYS = new Set<string>([
-  "Dead",
-  "Process",
-  "Unidentified",
+  "AltGraph",
 ]);
 
 const KEY_NAMES = [
@@ -108,14 +140,24 @@ const KEY_NAMES = [
   ...Array.from({ length: 20 }, (_, index) => `F${index + 1}`),
 ];
 
-const KEY_NAME_MAP = new Map(KEY_NAMES.map((key) => [key.toLowerCase(), key]));
+// Keyed by lowercase so a single case-insensitive lookup serves both sides:
+// a declared word such as "space" or "F5", and a live event's raw `key`
+// value. `" "` and `"+"` are their own lowercase form, so the same `.get`
+// call recovers the joiner and separator keys from a live event too, even
+// though the grammar itself never sees them as segments: a space splits
+// alternatives and "+" joins keys before either reaches this table.
+const KEY_NAME_MAP = new Map<string, string>([
+  ...KEY_NAMES.map((name) => [name.toLowerCase(), name] as const),
+  [" ", "Space"],
+  ["+", "Plus"],
+]);
 
 const PLATFORM_PREFIX = /^(apple|pc):/i;
 const KEY_CODE = /^Key([A-Z])$/;
-const DIGIT_CODE = /^Digit([0-9])$/;
-// A character the active layout produced on its own, rather than one a modifier
-// replaced. Used to decide when `code` may override `key`.
-const ASCII_ALNUM = /^[a-zA-Z0-9]$/;
+// A single Latin character, trusted verbatim over `code`. This is what makes
+// Dvorak mnemonics and AZERTY both work as their author intended, instead of
+// normalizing to the QWERTY letter at the same physical position.
+const LATIN = /^[a-zA-Z]$/;
 
 function warn(...args: unknown[]) {
   if (process.env.NODE_ENV !== "production") {
@@ -123,59 +165,12 @@ function warn(...args: unknown[]) {
   }
 }
 
-interface KeyboardLayoutSource {
-  getLayoutMap?: () => Promise<ReadonlyMap<string, string>>;
-  addEventListener?: (type: string, listener: () => void) => void;
-}
-
-let layoutMap: ReadonlyMap<string, string> | null = null;
-let layoutMapRequested = false;
-
-/**
- * Starts loading the keyboard layout map, so a physical code can be resolved to
- * the character the active layout assigns to it.
- *
- * Call this as early as a shortcut can be registered. `getLayoutMap` is
- * asynchronous, so requesting it only when the first keystroke arrives would
- * leave that keystroke resolving through the physical code.
- *
- * `navigator.keyboard` exists on Chromium only, so on other engines the map
- * never resolves and the physical-code fallback keeps handling every event.
- * That is why the map is an enhancement and never a precondition for dispatch.
- * @example
- * preloadShortcutLayoutMap();
- */
-export function preloadShortcutLayoutMap() {
-  if (layoutMapRequested) return;
-  layoutMapRequested = true;
-  if (!canUseDOM) return;
-  const keyboard = (
-    navigator as Navigator & { keyboard?: KeyboardLayoutSource }
-  ).keyboard;
-  if (typeof keyboard?.getLayoutMap !== "function") return;
-  const load = () => {
-    keyboard
-      .getLayoutMap?.()
-      .then((map) => {
-        layoutMap = map;
-      })
-      .catch(() => {
-        // The map stays unavailable and the fallback keeps resolving events.
-      });
-  };
-  // The map only describes the layout that was active when it resolved. Reload
-  // it whenever the platform reports a change, so a user who switches layout
-  // while the app is open does not keep resolving keys through the previous one.
-  // See https://wicg.github.io/keyboard-map/
-  keyboard.addEventListener?.("layoutchange", load);
-  load();
-}
-
 /**
  * Whether the element can be activated by a shortcut right now.
  *
- * A control disabled through an ancestor `fieldset` still reports `disabled ===
- * false` on its own property, so the `:disabled` selector is consulted too.
+ * A control disabled through an ancestor `fieldset` still reports `disabled
+ * === false` on its own property, so the `:disabled` selector is consulted
+ * too.
  * @example
  * if (!isShortcutElementEnabled(element)) return;
  */
@@ -192,27 +187,67 @@ export function isShortcutElementEnabled(element: Element) {
 }
 
 /**
- * Returns the platform shortcuts should be resolved for. Returns `"pc"` when
- * `navigator` is unavailable, which keeps server rendering deterministic.
+ * Returns the platform shortcuts should be resolved and displayed for.
+ * Returns `"other"` when `navigator` is unavailable, which keeps server
+ * rendering deterministic.
  * @example
- * getShortcutPlatform(); // "apple" on macOS, "pc" elsewhere
+ * getShortcutPlatform(); // "apple" on macOS, "windows" on Windows
  */
 export function getShortcutPlatform(): ShortcutPlatform {
-  return isApple() ? "apple" : "pc";
+  if (!canUseDOM) return "other";
+  if (isApple()) return "apple";
+  if (/win/i.test(navigator.userAgent)) return "windows";
+  return "other";
 }
 
 /**
- * Canonicalizes a single non-modifier key segment. Single characters are
- * uppercased. Multi-character names are matched case-insensitively against the
- * canonical `KeyboardEvent.key` names and passed through with a warning when
- * unknown.
+ * Reduces a display platform to the two buckets a `keys` declaration binds
+ * an alternative to. Only the group affects which alternative wins, so a
+ * wrong `"windows"`/`"other"` guess can never leave a platform unbound.
+ * @example
+ * getPlatformGroup("windows"); // "pc"
  */
-function canonicalizeKey(segment: string, keyShortcuts: string) {
-  if (segment.length === 1) return segment.toUpperCase();
+export function getPlatformGroup(
+  platform: ShortcutPlatform,
+): ShortcutPlatformGroup {
+  return platform === "apple" ? "apple" : "pc";
+}
+
+/**
+ * Folds a single character to uppercase for comparison. Multi-character
+ * names, such as `"Escape"` or `"F5"`, pass through unchanged.
+ *
+ * `"ß".toUpperCase()` is `"SS"`, which is not a single key, so a fold that
+ * would grow the string is discarded and the original character is kept.
+ */
+function foldKeyCase(base: string) {
+  if (base.length !== 1) return base;
+  const upper = base.toUpperCase();
+  return upper.length > 1 ? base : upper;
+}
+
+/**
+ * Joins the modifiers that are actually held, in canonical order, with the
+ * key. Shared by event normalization and `keys` declaration parsing so both
+ * sides always agree on one canonical spelling.
+ */
+function canonical(modifiers: readonly Modifier[], base: string) {
+  const ordered = MODIFIERS.filter((modifier) => modifiers.includes(modifier));
+  return [...ordered, base].join("+");
+}
+
+/**
+ * Canonicalizes a single non-modifier key segment from a declared `keys`
+ * string. Single characters are uppercased. Multi-character names are
+ * matched case-insensitively against the canonical `KeyboardEvent.key`
+ * names and passed through with a warning when unknown.
+ */
+function canonicalizeDeclaredKey(segment: string, keys: string) {
+  if (segment.length === 1) return foldKeyCase(segment);
   const name = KEY_NAME_MAP.get(segment.toLowerCase());
   if (name) return name;
   warn(
-    `Unknown shortcut key "${segment}" in "${keyShortcuts}".`,
+    `Unknown shortcut key "${segment}" in "${keys}".`,
     'The key is used as written. Use a canonical KeyboardEvent.key name, such as "Escape" or "ArrowUp".',
     "See https://ariakit.com/components/shortcut",
   );
@@ -220,30 +255,33 @@ function canonicalizeKey(segment: string, keyShortcuts: string) {
 }
 
 /**
- * Parses a single space-free shortcut token into a resolved shortcut, or
- * returns `null` when the token is invalid for the given platform.
+ * Parses a single space-free alternative into a resolved shortcut, or
+ * returns `null` when the alternative does not apply to the given platform
+ * group or is invalid.
  */
-function parseShortcut(
+function parseAlternative(
   token: string,
-  platform: ShortcutPlatform,
-  keyShortcuts: string,
+  group: ShortcutPlatformGroup,
+  keys: string,
 ): ResolvedShortcut | null {
   let rest = token;
   const prefix = rest.match(PLATFORM_PREFIX);
   if (prefix) {
-    // A platform-prefixed shortcut only exists on that platform.
-    if (prefix[1]?.toLowerCase() !== platform) return null;
+    // A platform-prefixed alternative only exists on that platform group.
+    // This is silent, not a warning: a `keys` string with only `pc:`
+    // alternatives legitimately leaves Apple unbound.
+    if (prefix[1]?.toLowerCase() !== group) return null;
     rest = rest.slice(prefix[0].length);
   }
 
   const segments = rest.split("+");
   const modifiers = new Set<Modifier>();
-  const keys: string[] = [];
+  const keyParts: string[] = [];
 
   for (const segment of segments) {
     if (!segment) {
       warn(
-        `Invalid shortcut "${token}" in "${keyShortcuts}".`,
+        `Invalid shortcut "${token}" in "${keys}".`,
         'It has an empty segment. Write the literal plus key as "Plus", since "+" separates keys.',
         "See https://ariakit.com/components/shortcut",
       );
@@ -251,7 +289,8 @@ function parseShortcut(
     }
     const lower = segment.toLowerCase();
     if (lower === "mod") {
-      modifiers.add(platform === "apple" ? "Meta" : "Control");
+      // `mod` resolves to `Meta` on Apple and `Control` everywhere else.
+      modifiers.add(group === "apple" ? "Meta" : "Control");
       continue;
     }
     const modifier = MODIFIER_ALIASES[lower];
@@ -259,149 +298,132 @@ function parseShortcut(
       modifiers.add(modifier);
       continue;
     }
-    keys.push(canonicalizeKey(segment, keyShortcuts));
+    keyParts.push(canonicalizeDeclaredKey(segment, keys));
   }
 
-  if (keys.length !== 1) {
+  if (keyParts.length !== 1) {
     warn(
-      `Invalid shortcut "${token}" in "${keyShortcuts}".`,
-      `It has ${keys.length} non-modifier keys, but exactly one is required.`,
+      `Invalid shortcut "${token}" in "${keys}".`,
+      `It has ${keyParts.length} non-modifier keys, but exactly one is required.`,
       "See https://ariakit.com/components/shortcut",
     );
     return null;
   }
 
-  const resolved: string[] = MODIFIERS.filter((modifier) =>
+  const orderedModifiers = MODIFIERS.filter((modifier) =>
     modifiers.has(modifier),
   );
-  resolved.push(keys[0]!);
-  return { text: resolved.join("+"), keys: resolved };
+  const resolvedKeys = [...orderedModifiers, keyParts[0]!];
+  return { text: resolvedKeys.join("+"), keys: resolvedKeys };
 }
 
 /**
- * Resolves a space-separated `keyShortcuts` value into the canonical shortcuts
- * that exist on the given platform. Invalid shortcuts are skipped with a
- * development warning.
+ * Resolves a space-separated `keys` value into the canonical shortcuts that
+ * exist on the given platform. A space separates alternatives, not a
+ * sequence, matching `aria-keyshortcuts`. Invalid alternatives are skipped
+ * with a development warning; an alternative that simply does not apply to
+ * this platform is skipped silently.
  * @example
- * resolveKeyShortcuts("mod+K", "apple");
+ * resolveKeys("mod+K", "apple");
  * // [{ text: "Meta+K", keys: ["Meta", "K"] }]
- * resolveKeyShortcuts("apple:Meta+R pc:Control+R", "pc");
+ * resolveKeys("apple:Meta+R pc:Control+R", "windows");
  * // [{ text: "Control+R", keys: ["Control", "R"] }]
  */
-export function resolveKeyShortcuts(
-  keyShortcuts: string,
-  platform = getShortcutPlatform(),
+export function resolveKeys(
+  keys: string,
+  platform: ShortcutPlatform,
 ): ResolvedShortcut[] {
-  const shortcuts: ResolvedShortcut[] = [];
-  // Separate tokens can resolve to the same canonical text, through aliases
-  // ("Control+K ctrl+k"), through `mod` next to an explicit declaration, or
-  // through platform prefixes that both apply. Keeping duplicates would
-  // register one command several times under the same key, so one keydown would
-  // run it several times. Each canonical text is kept once.
+  const group = getPlatformGroup(platform);
+  const resolved: ResolvedShortcut[] = [];
+  // Separate alternatives can resolve to the same canonical text, through
+  // aliases ("Control+K ctrl+k"), through `mod` next to an explicit
+  // declaration, or through platform prefixes that both apply. Keeping
+  // duplicates would register one command several times under the same
+  // lookup key, so one keydown would run it several times.
   const seen = new Set<string>();
-  // Empty tokens come from padding and are not authoring mistakes, so they are
-  // dropped before parsing rather than warned about.
-  for (const token of keyShortcuts.split(/\s+/)) {
+  // Empty tokens come from padding and are not authoring mistakes, so they
+  // are dropped before parsing rather than warned about.
+  for (const token of keys.split(/\s+/)) {
     if (!token) continue;
-    const shortcut = parseShortcut(token, platform, keyShortcuts);
+    const shortcut = parseAlternative(token, group, keys);
     if (!shortcut) continue;
     if (seen.has(shortcut.text)) continue;
     seen.add(shortcut.text);
-    shortcuts.push(shortcut);
+    resolved.push(shortcut);
   }
-  return shortcuts;
+  return resolved;
 }
 
 /**
- * Normalizes a keyboard event into canonical shortcut text, or `null` when the
- * event cannot represent a shortcut on its own, such as a lone modifier press.
+ * Normalizes a keyboard event into the two canonical lookup keys registered
+ * commands are indexed by, or `null` when the event cannot represent a
+ * shortcut on its own, such as a lone modifier press or a composing input
+ * method.
+ *
+ * Never consults the Keyboard Layout Map API: it is Chromium only, so the
+ * same physical press would normalize differently per engine.
  * @example
- * getEventKeyShortcuts({ key: "a", metaKey: true }); // "Meta+A"
- * getEventKeyShortcuts({ key: "Shift" }); // null
+ * getEventLookupKeys({ key: "a", metaKey: true });
+ * // { primary: "Meta+A", secondary: null }
+ * getEventLookupKeys({ key: "Shift" }); // null
  */
-export function getEventKeyShortcuts(event: KeyboardEventLike): string | null {
-  const { key, code, metaKey, ctrlKey, altKey, shiftKey } = event;
-  if (!key) return null;
-  if (MODIFIER_EVENT_KEYS.has(key)) return null;
-  // Before the physical-code recovery below, which would otherwise turn a dead
-  // key such as Option+E into "Alt+E" and let a shortcut cancel accent input.
-  if (RESERVED_EVENT_KEYS.has(key)) return null;
+export function getEventLookupKeys(
+  event: KeyboardEventLike,
+): ShortcutLookupKeys | null {
+  const { key, code, keyCode, metaKey, ctrlKey, altKey, shiftKey } = event;
 
-  // Normally already requested when the first store was created. This covers
-  // direct calls to this function with no store in play.
-  preloadShortcutLayoutMap();
+  // 1. Input-method sentinels name no key the user pressed.
+  if (key === "Dead" || key === "Unidentified") return null;
+  // 2. Composition in progress, including the legacy keyCode signal.
+  if (event.isComposing || keyCode === 229) return null;
+  // 3. AltGr text composition. Unconditional, and never gated on the key
+  // it's composing: matching it would let ordinary international typing run
+  // shortcuts.
+  if (event.getModifierState?.("AltGraph")) return null;
+  // 4. A modifier pressed on its own is not a shortcut.
+  if (LONE_MODIFIER_KEYS.has(key)) return null;
 
-  // Windows reports AltGr as Control together with Alt while it composes
-  // characters such as "€". Those keydowns carry text, not a command, so
-  // matching them would let ordinary international typing run shortcuts. The
-  // text-field guard cannot catch this, because the text does carry a command
-  // modifier. A composed character is never a plain letter or digit, which
-  // keeps a real Control+Alt+K shortcut working on the same layouts.
-  if (
-    altKey &&
-    ctrlKey &&
-    key.length === 1 &&
-    !ASCII_ALNUM.test(key) &&
-    event.getModifierState?.("AltGraph")
-  ) {
-    return null;
-  }
-
+  // 5. Trust a Latin `key` verbatim. Fall back to `code` only when `key` is
+  // not Latin, which is what lets a Cyrillic or Greek layout still match a
+  // Latin binding without normalizing every other layout to QWERTY.
   let base = key;
-  if (base === " ") {
-    base = "Space";
-  } else if (base === "+") {
-    base = "Plus";
+  if (!LATIN.test(base)) {
+    const letter = code?.match(KEY_CODE)?.[1];
+    if (letter) base = letter;
+  }
+  base = foldKeyCase(base);
+
+  // 6. Named keys, including the joiner and separator characters.
+  base = KEY_NAME_MAP.get(base.toLowerCase()) ?? base;
+
+  const held: Modifier[] = [];
+  if (ctrlKey) held.push("Control");
+  if (altKey) held.push("Alt");
+  if (shiftKey) held.push("Shift");
+  if (metaKey) held.push("Meta");
+
+  // 7.
+  const primary = canonical(held, base);
+
+  // 8. "Shift+?" also reads as "?", but "Shift+A" does not read as "A",
+  // because ARIA treats "a" and "A" as the same key.
+  let secondary: string | null = null;
+  if (shiftKey && base.length === 1 && !LATIN.test(base)) {
+    secondary = canonical(
+      held.filter((modifier) => modifier !== "Shift"),
+      base,
+    );
   }
 
-  // Recover the declared key from the physical code only when a modifier
-  // replaced the character: Option on macOS turns letters into symbols
-  // ("Option+L" produces "¬") and Shift turns digits into punctuation
-  // ("Shift+1" produces "!"). When the layout still reports a letter or digit,
-  // that character wins, because `code` names a physical position rather than
-  // the character produced: on AZERTY the key labelled "A" reports `KeyQ`.
-  if (code && !(base.length === 1 && ASCII_ALNUM.test(base))) {
-    const letter = altKey ? code.match(KEY_CODE) : null;
-    if (letter) {
-      // `code` names a physical position, so prefer the character the active
-      // layout assigns to that position when the browser can report it. Without
-      // the map, the QWERTY letter in the code is the only thing available.
-      const mapped = layoutMap?.get(code);
-      base = mapped && ASCII_ALNUM.test(mapped) ? mapped : letter[1]!;
-    } else {
-      const digit = code.match(DIGIT_CODE);
-      if (digit && (altKey || shiftKey)) {
-        base = digit[1]!;
-      } else {
-        // Shift also replaces punctuation ("Shift+/" produces "?"). The layout
-        // map is the only reliable source here, since punctuation codes carry
-        // no character of their own.
-        const mapped = layoutMap?.get(code);
-        if (mapped && mapped.length === 1) {
-          base = mapped;
-        }
-      }
-    }
-  }
-
-  if (base.length === 1) {
-    base = base.toUpperCase();
-  }
-
-  const modifiers: string[] = [];
-  if (metaKey) modifiers.push("Meta");
-  if (ctrlKey) modifiers.push("Control");
-  if (altKey) modifiers.push("Alt");
-  if (shiftKey) modifiers.push("Shift");
-  modifiers.push(base);
-  return modifiers.join("+");
+  return { primary, secondary };
 }
 
 const shortcutHandledEvents = new WeakSet<Event>();
 
 /**
- * Marks a keyboard event as handled by a shortcut store, so sibling stores can
- * tell that default was prevented by a shortcut rather than by other code.
+ * Marks a keyboard event as handled by a shortcut store, so sibling stores
+ * can tell that default was prevented by a shortcut rather than by other
+ * code.
  * @example
  * markShortcutHandled(event);
  */
@@ -421,25 +443,32 @@ export function wasShortcutHandled(event: Event) {
 const shortcutClickEvents = new WeakSet<Event>();
 
 /**
- * Dispatches a click event marked as originating from a keyboard shortcut, so
- * shortcut-aware click handlers can tell it apart from a user click and avoid
- * re-triggering the same command.
+ * Dispatches a click event marked as originating from a keyboard shortcut,
+ * so shortcut-aware click handlers can tell it apart from a user click and
+ * avoid re-triggering the same command.
+ *
+ * Callers must never forward the modifiers held when the shortcut was
+ * pressed: the `⌘` in `keys="mod+O"` belongs to the binding, not to the
+ * click, and forwarding it would, for example, open a link in a background
+ * tab instead of navigating.
  * @example
- * fireShortcutClickEvent(element, { metaKey: true });
+ * fireShortcutClickEvent(element);
  */
 export function fireShortcutClickEvent(
   element: Element,
   eventInit?: MouseEventInit,
 ) {
-  // Built in the element's own realm, so a command rendered into a same-origin
-  // frame receives an event that frame's own code recognizes as a MouseEvent.
+  // Built in the element's own realm, so a command rendered into a
+  // same-origin frame receives an event that frame's own code recognizes as
+  // a MouseEvent.
   const view = element.ownerDocument?.defaultView;
   const MouseEventConstructor = view?.MouseEvent ?? MouseEvent;
   const event = new MouseEventConstructor("click", {
     bubbles: true,
     cancelable: true,
     // Real clicks are composed, so ancestor listeners outside a shadow root
-    // observe them. Without this they would see user clicks but miss shortcuts.
+    // observe them. Without this they would see user clicks but miss
+    // shortcuts.
     composed: true,
     ...eventInit,
   });

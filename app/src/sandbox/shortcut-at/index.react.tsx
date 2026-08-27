@@ -1,9 +1,8 @@
 import {
   Shortcut,
   ShortcutCommand,
-  ShortcutDisclosure,
-  ShortcutDisclosureContext,
   ShortcutProvider,
+  ShortcutScope,
   useShortcutCommand,
 } from "@ariakit/react";
 import { useState } from "react";
@@ -14,7 +13,7 @@ export default function Example() {
   const [palette, setPalette] = useState(false);
 
   useShortcutCommand({
-    keyShortcuts: "mod+K",
+    keys: "mod+K",
     onTrigger: () => {
       setPalette((palette) => !palette);
       setStatus("Command palette toggled with the handler-only command");
@@ -27,41 +26,40 @@ export default function Example() {
         <h1 className="page-heading">Shortcut accessibility fixture</h1>
 
         {/*
-         * The disclosure discovers its shortcuts from the commands registered
-         * inside this context, so both must live within it.
+         * ShortcutScope marks the region: commands inside it stay scoped to
+         * it wherever it renders, independent of the DOM.
          */}
-        <ShortcutDisclosureContext>
-          <ShortcutDisclosure className="toolbar">
-            <ShortcutCommand
-              className="button"
-              keyShortcuts="mod+B"
-              onClick={() => setStatus("Bold toggled")}
-            >
-              Bold <Shortcut />
-            </ShortcutCommand>
-            <ShortcutCommand
-              className="button"
-              keyShortcuts="mod+I"
-              onClick={() => setStatus("Italic toggled")}
-            >
-              Italic <Shortcut />
-            </ShortcutCommand>
-            {/*
-             * Disabled but still reachable, so a screen reader can land on it and
-             * announce that it is unavailable. Its shortcut is not exposed while
-             * it is disabled.
-             */}
-            <ShortcutCommand
-              className="button"
-              keyShortcuts="mod+X"
-              disabled
-              accessibleWhenDisabled
-              onClick={() => setStatus("Strikethrough toggled")}
-            >
-              Strikethrough <Shortcut />
-            </ShortcutCommand>
-          </ShortcutDisclosure>
-        </ShortcutDisclosureContext>
+        <ShortcutScope className="toolbar">
+          <ShortcutCommand
+            className="button"
+            keys="mod+B"
+            onClick={() => setStatus("Bold toggled")}
+          >
+            Bold <Shortcut />
+          </ShortcutCommand>
+          <ShortcutCommand
+            className="button"
+            keys="mod+I"
+            onClick={() => setStatus("Italic toggled")}
+          >
+            Italic <Shortcut />
+          </ShortcutCommand>
+          {/*
+           * aria-disabled, not the native disabled attribute: the command
+           * stays reachable, so a screen reader can land on it and announce
+           * that it is unavailable. Its shortcut is not exposed while
+           * aria-disabled is set, since ShortcutCommand derives `enabled`
+           * from disabledFromProps/disabledFromElement.
+           */}
+          <ShortcutCommand
+            className="button"
+            keys="mod+X"
+            aria-disabled="true"
+            onClick={() => setStatus("Strikethrough toggled")}
+          >
+            Strikethrough <Shortcut />
+          </ShortcutCommand>
+        </ShortcutScope>
 
         <p className="status" aria-live="polite">
           {status}

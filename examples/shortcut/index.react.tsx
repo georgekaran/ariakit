@@ -15,7 +15,7 @@ interface PaletteCommandProps {
 // register on the same store. A hook called above the provider would fall back
 // to the global store instead, and clicking the button could not reach it.
 function PaletteCommand({ onTrigger }: PaletteCommandProps) {
-  useShortcutCommand({ keyShortcuts: "mod+K", onTrigger });
+  useShortcutCommand({ keys: "mod+K", onTrigger });
   return null;
 }
 
@@ -23,25 +23,29 @@ export default function Example() {
   const [message, setMessage] = useState("Press a shortcut or click a button");
   return (
     <ShortcutProvider
-      glyphs={{ apple: { Meta: "⌘", "+": "" }, Control: "Ctrl" }}
+      glyphs={{
+        apple: { Meta: "⌘", "+": "" },
+        windows: { Control: "Ctrl" },
+        other: { Control: "Ctrl" },
+      }}
     >
       <PaletteCommand onTrigger={() => setMessage("Command palette opened")} />
       <div className="toolbar">
         <ShortcutCommand
           className="button"
-          keyShortcuts="mod+B"
+          keys="mod+B"
           onClick={() => setMessage("Bold toggled")}
         >
           Bold <Shortcut />
         </ShortcutCommand>
         <ShortcutCommand
           className="button"
-          keyShortcuts="mod+I"
+          keys="mod+I"
           onClick={() => setMessage("Italic toggled")}
         >
           Italic <Shortcut />
         </ShortcutCommand>
-        <ShortcutCommand className="button" keyShortcuts="mod+K">
+        <ShortcutCommand className="button" keys="mod+K">
           Palette <Shortcut />
         </ShortcutCommand>
       </div>

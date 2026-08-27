@@ -10,6 +10,12 @@ function output(text: string) {
   return match;
 }
 
+function testId(id: string) {
+  const element = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+  if (!element) throw new Error(`Missing [data-testid="${id}"]`);
+  return element;
+}
+
 test("runs a provider-scoped handler command", async () => {
   await press("ArrowUp", q.button("anchor"), { ctrlKey: true });
   expect(output("provider count").textContent).toBe("provider count: 1");
@@ -29,7 +35,7 @@ test("disabling a hook command stops dispatch and re-enabling restores it", asyn
   expect(output("global count").textContent).toBe("global count: 1");
 });
 
-test("re-registers when keyShortcuts changes", async () => {
+test("re-registers when keys changes", async () => {
   await press("ArrowLeft", q.button("anchor"), { ctrlKey: true });
   expect(output("remap count").textContent).toBe("remap count: 1");
   await click(q.button("remap"));
@@ -40,12 +46,6 @@ test("re-registers when keyShortcuts changes", async () => {
   expect(output("remap count").textContent).toBe("remap count: 2");
 });
 
-function testId(id: string) {
-  const element = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
-  if (!element) throw new Error(`Missing [data-testid="${id}"]`);
-  return element;
-}
-
 test("renders keys as nested kbd elements with glyphs", () => {
   const plain = testId("plain");
   expect(plain.tagName).toBe("KBD");
@@ -55,8 +55,9 @@ test("renders keys as nested kbd elements with glyphs", () => {
     "control",
     "k",
   ]);
-  // Separator text between the nested kbd elements defaults to "+".
-  expect(plain.textContent).toBe("⌃+K");
+  // Each key is its own nested kbd, with no "+" joiner element (A9 step 3):
+  // any separator a caller sees is CSS, not DOM text.
+  expect(plain.textContent).toBe("⌃K");
 });
 
 test("respects platform, component glyphs, and empty separators", () => {
@@ -64,14 +65,30 @@ test("respects platform, component glyphs, and empty separators", () => {
   expect(apple.textContent).toBe("⌘K");
 });
 
-test("display=first shows one shortcut and display=all shows every shortcut", () => {
-  expect(testId("plain").textContent).toBe("⌃+K");
-  expect(testId("all").textContent).toBe("⌃+K ⌃+J");
+test("Shortcut renders only the first alternative that resolves for the platform", () => {
+  // "multi" is bound to "Control+K Control+J": A9 step 2 says only the
+  // first alternative is ever shown.
+  expect(testId("multi-first").textContent).toBe("⌃K");
 });
 
-test("displayDisabled=false hides a disabled shortcut", () => {
-  expect(testId("disabled-shown")).not.toHaveAttribute("hidden");
-  expect(testId("disabled-hidden")).toHaveAttribute("hidden");
+test("an app renders every alternative itself by mapping over useShortcutKeys", () => {
+  const alternatives = [...testId("multi-all").children].map(
+    (kbd) => kbd.textContent,
+  );
+  expect(alternatives).toEqual(["⌃K", "⌃J"]);
+});
+
+test("alwaysVisible keeps the hint visible while the command is disabled", () => {
+  // Hidden with visibility: hidden, never unmounted -- querying it at all
+  // proves it was not removed from the DOM.
+  expect(testId("gated").style.visibility).toBe("hidden");
+  expect(testId("always-visible").style.visibility).toBe("");
+});
+
+test("enabling the command un-hides the gated hint too", async () => {
+  await click(q.button("enable hidden demo"));
+  expect(testId("gated").style.visibility).toBe("");
+  expect(testId("always-visible").style.visibility).toBe("");
 });
 
 test("exposes aria-keyshortcuts and keeps the accessible name clean", () => {
@@ -104,22 +121,13 @@ test("clicking a command bridges to handler commands without recursion", async (
 
 test("pressing a shared shortcut runs the handler once", async () => {
   await press("m", q.button("anchor"), { ctrlKey: true });
-  // The handler command runs directly. The element command's synthetic click
-  // is marked, so the Save button's bridge does not run the handler again —
-  // exactly one increment for one keypress.
+  // Two independent registrations share "Control+M". The dispatcher calls
+  // onTrigger directly for the highest-ranked candidate and stops there —
+  // exactly one increment for one keypress, never both.
   expect(output("saves").textContent).toBe("saves: 1");
 });
 
-test("displayDisabled=false falls through to an available alternative", () => {
-  // Control+H is vetoed and Control+L is free, so only Control+L renders and
-  // the element stays visible instead of being hidden by the first shortcut.
-  expect(testId("mixed-all")).not.toHaveAttribute("hidden");
-  expect(testId("mixed-all").textContent).toBe("⌃+L");
-  expect(testId("mixed-first")).not.toHaveAttribute("hidden");
-  expect(testId("mixed-first").textContent).toBe("⌃+L");
-});
-
 test("a command's display shows exactly what aria-keyshortcuts claims", () => {
-  expect(q.button("Mixed")).toHaveAttribute("aria-keyshortcuts", "Control+Y");
-  expect(testId("command-mixed").textContent).toBe("⌃+Y");
+  expect(q.button("Mixed")).toHaveAttribute("aria-keyshortcuts", "Control+H");
+  expect(testId("command-mixed").textContent).toBe("⌃H");
 });
