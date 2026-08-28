@@ -884,7 +884,7 @@ test("runOnTrigger never clicks a reference element", () => {
   button.addEventListener("click", onClick);
   // A reference only: `command` and `element`, no `onTrigger` declared
   // anywhere under this name. This is the guard against the click bridge
-  // looping into itself -- runOnTrigger must not fall back to activating
+  // looping into itself; runOnTrigger must not fall back to activating
   // the element the way trigger() does.
   track(store.registerCommand({ command: "save", element: button }));
   const event: ShortcutClickEvent = {

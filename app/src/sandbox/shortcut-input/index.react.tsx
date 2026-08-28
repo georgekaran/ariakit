@@ -25,7 +25,7 @@ function BoldCommand() {
   );
 }
 
-// The recorder is left uncontrolled -- it owns its own display value -- and
+// The recorder is left uncontrolled (it owns its own display value) and
 // only reports commits upward through setKeys, which is exactly enough to
 // feed a ShortcutCommand elsewhere and prove the round trip needs no
 // conversion.

@@ -32,7 +32,7 @@ function instrumentStore() {
   const store: ShortcutStore = {
     ...core,
     useState: ((keyOrSelector: never) =>
-      // oxlint-disable-next-line react-hooks/rules-of-hooks -- only reached during render
+      // oxlint-disable-next-line react-hooks/rules-of-hooks
       useStoreState(
         core,
         keyOrSelector,
@@ -51,7 +51,7 @@ test("a scope registers once per mount under StrictMode", async () => {
 
   // React 18 and 19 disagree on raw StrictMode counts (19: calls 1 /
   // unregisters 0; 18: calls 2 / unregisters 1), but both leave calls
-  // minus unregisters at 1 -- the invariant this checks.
+  // minus unregisters at 1: the invariant this checks.
   expect(counts.calls - counts.unregisters).toBe(1);
 
   unmount();

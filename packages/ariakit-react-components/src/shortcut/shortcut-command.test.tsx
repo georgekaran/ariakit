@@ -110,7 +110,7 @@ test("aria-keyshortcuts disappears when enabled is false", async () => {
 test("a command inside a disabled fieldset drops aria-keyshortcuts", async () => {
   // happy-dom's `:disabled` does not implement fieldset inheritance (same
   // gap noted in packages/ariakit-test/src/shims.ts); polyfilled here.
-  // oxlint-disable-next-line typescript/unbound-method -- called with an explicit receiver below.
+  // oxlint-disable-next-line typescript/unbound-method
   const originalMatches = HTMLButtonElement.prototype.matches;
   const matchesSpy = vi
     .spyOn(HTMLButtonElement.prototype, "matches")
@@ -257,7 +257,7 @@ test("a provider adopts a store's existing registry", async () => {
 
     // External -> React: the bare reference sees the externally declared
     // keys through the SAME registry, not a parallel empty one, so it
-    // exposes them itself -- thatStore's own registration already carries
+    // exposes them itself; thatStore's own registration already carries
     // its own keys and handler, so this is the one assertion that actually
     // distinguishes adoption from two independent registries.
     expect(ariaKeyShortcuts(q.button.ensure("Save"))).toBe("Control+S");

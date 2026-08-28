@@ -54,7 +54,7 @@ test("renders keys as nested kbd elements with glyphs", () => {
     "control",
     "k",
   ]);
-  // No "+" joiner in the DOM -- any separator a caller sees is CSS only.
+  // No "+" joiner in the DOM: any separator a caller sees is CSS only.
   expect(plain.textContent).toBe("⌃+K");
 });
 

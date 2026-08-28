@@ -60,7 +60,7 @@ test("the committed value is canonical text, not glyphs", async () => {
 
   await focus(input());
   await press("s", input(), { metaKey: true, shiftKey: true });
-  // Canonical modifier order is Control, Alt, Shift, Meta -- not press order.
+  // Canonical modifier order is Control, Alt, Shift, Meta, not press order.
   expect(setKeys).toHaveBeenCalledWith("Shift+Meta+S");
 });
 

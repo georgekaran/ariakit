@@ -13,7 +13,7 @@ import { useState } from "react";
 // first render (see useStore in @ariakit/react-store), and nothing re-applies
 // a changed prop afterwards. The library's own tests toggle `enabled`
 // exclusively through store.setEnabled(), never by re-rendering a provider
-// with a different `enabled` prop, and this component does the same --
+// with a different `enabled` prop, and this component does the same:
 // reading its own store from context (correct here BECAUSE it is rendered as
 // a direct child of a ShortcutProvider) and calling the imperative setter
 // from an event handler.
@@ -81,8 +81,8 @@ function NestedLevels() {
   );
 }
 
-// an override -- from the provider's `keys` map, or from store.setKeys()
-// below -- beats the merged `keys` declaration entirely, whatever the mount
+// an override (from the provider's `keys` map, or from store.setKeys()
+// below) beats the merged `keys` declaration entirely, whatever the mount
 // order. It does not add an alternative; it replaces the bound keys, so the
 // originally declared "Control+S" goes dead while the override is active.
 function ProviderKeysOverride() {
@@ -105,7 +105,7 @@ function ProviderKeysOverride() {
 
 // store.setKeys(): the imperative counterpart of the provider's `keys` map.
 // A string rebinds the command, `null` unbinds it entirely (not "temporarily
-// no keys" -- the command simply cannot be reached by any key while unbound),
+// no keys": the command simply cannot be reached by any key while unbound),
 // and `undefined` clears the override, restoring whatever was declared.
 function SetKeysDemo() {
   const store = useShortcutStore();

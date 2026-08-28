@@ -19,7 +19,7 @@ function focusTestId(id: string) {
 // "its own elements plus the elements of every scope registered under it
 // through React context". Region A's scoped command inherits this
 // ShortcutScope (scope left undefined on the command), and so does the
-// nested ShortcutScope inside the popover below -- REGARDLESS of where the
+// nested ShortcutScope inside the popover below, REGARDLESS of where the
 // portal actually places that scope's element in the DOM.
 function RegionA() {
   const [count, setCount] = useState(0);
@@ -68,8 +68,8 @@ function RegionA() {
 
 // A SECOND, sibling ShortcutScope with its own command on the same keys as
 // region A's. Its region does not overlap region A's, so the ranking drops it
-// as a candidate whenever the origin is inside region A, and vice versa --
-// no ranking is even needed to keep the two apart.
+// as a candidate whenever the origin is inside region A, and vice versa.
+// No ranking is even needed to keep the two apart.
 function RegionB() {
   const [count, setCount] = useState(0);
   return (
@@ -89,7 +89,7 @@ function RegionB() {
 
 // A plain <div>, NOT a ShortcutScope, used as a `scope` ref target: an
 // element that was not rendered by ShortcutScope is tested by plain
-// containment and gains no portalled descendants -- there is no registered
+// containment and gains no portalled descendants. There is no registered
 // ScopeRecord for `ref.current` to look up, only the element itself.
 function RegionPlain() {
   const ref = useRef<HTMLDivElement>(null);
@@ -137,7 +137,7 @@ function FocusMover() {
 
 // Decision 52: an origin of document.body is inside no region, and there is
 // no pointerdown fallback to recover one. Blurring whatever is currently
-// focused, with nothing else to take its place, reproduces exactly that --
+// focused, with nothing else to take its place, reproduces exactly that:
 // the same outcome a click on a Toolbar's own padding produces, without
 // needing a Toolbar in this fixture. Blurring `document.activeElement`
 // (rather than `event.currentTarget`) keeps this correct on Safari too,
@@ -156,9 +156,9 @@ function DropFocusButton() {
 }
 
 // a bare printable key defaults to `enabledInTextbox: false`, so
-// ordinary typing is left alone -- protectedDemo proves that, and that the
+// ordinary typing is left alone: protectedDemo proves that, and that the
 // same key fires normally once focus leaves the input. `enabledInTextbox:
-// true` overrides that default -- captureDemo proves the dispatcher's
+// true` overrides that default: captureDemo proves the dispatcher's
 // CAPTURE phase claims the key and calls preventDefault() before the
 // browser's own default action would insert the character, so the input
 // stays empty. Happy-dom cannot prove either half: it does not simulate
@@ -190,7 +190,7 @@ function TextboxDemo() {
 // a scoped command always outranks an unscoped one, because
 // scope depth is compared before store depth or registration order. So
 // dialogEscape claims Escape over globalEscape whatever order the two
-// happen to register in -- the ranking does not care which one is newer.
+// happen to register in. The ranking does not care which one is newer.
 // hideOnEscape is off so the Shortcut system is the ONLY thing that
 // responds to Escape here, which keeps the signal clean: nothing native is
 // in the way of telling which registration actually claimed the key.
@@ -242,7 +242,7 @@ function EscapeDemo() {
 // the keyboard path fires carries no modifiers, so a link-rendered
 // reference navigates instead of doing whatever Control/Cmd+Click means to
 // the browser (opening a background tab). Unnamed, so this registration is
-// both the declaration and its own only reference -- pressing the shortcut
+// both the declaration and its own only reference. Pressing the shortcut
 // clicks this exact element.
 function LinkCommand() {
   return (

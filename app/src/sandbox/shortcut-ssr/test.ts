@@ -70,7 +70,7 @@ test("with no platform prop, the server renders neither, and the client reveals 
     },
     (container) => {
       // The platform is unknowable on the server, but the client knows it
-      // immediately -- once mounted, the guess is no longer a guess, so the
+      // immediately: once mounted, the guess is no longer a guess, so the
       // suppression that protected against a wrong one has nothing left to
       // protect against. Mirrors isApple()'s own check, since this package
       // has no dependency on @ariakit/components to import it from.

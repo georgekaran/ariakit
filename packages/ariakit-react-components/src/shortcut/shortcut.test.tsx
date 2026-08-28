@@ -268,8 +268,9 @@ test("an Apple chord renders no joiner", async () => {
     </ShortcutProvider>,
   );
 
-  // Apple's "+" glyph is "", so the chord renders solid -- no element at all
-  // between the keys, not even an empty one: two keys, two children.
+  // Apple's "+" glyph is "", so the chord renders solid. There is no
+  // element at all between the keys, not even an empty one: two keys, two
+  // children.
   const outerFirst = outerKbd();
   expect(outerFirst.children.length).toBe(2);
   expect(outerFirst.textContent).toBe("⌘S");

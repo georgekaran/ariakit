@@ -9,7 +9,7 @@ import {
 import { useState } from "react";
 
 // A ShortcutProvider's `glyphs` is store state, so it composes
-// down to every nested Shortcut -- "plain" below carries no glyphs prop of
+// down to every nested Shortcut: "plain" below carries no glyphs prop of
 // its own and still renders this. A Shortcut's own `glyphs` prop still
 // overrides the store for THIS instance: multi-first, multi-all and
 // command-mixed below carry it directly to prove the per-instance override
@@ -40,8 +40,8 @@ function BoldButton() {
 function SaveStatus() {
   const [saves, setSaves] = useState(0);
   // The handler is declared exactly once, by name. The ShortcutCommand
-  // below carries the same `command` and nothing else -- no keys, no
-  // onTrigger -- so it is a pure reference: clicking it runs the
+  // below carries the same `command` and nothing else (no keys, no
+  // onTrigger), so it is a pure reference: clicking it runs the
   // declaration's handler through store.runOnTrigger, never its own local
   // code (there is none). "Declare once, reference anywhere."
   useShortcutCommand({
