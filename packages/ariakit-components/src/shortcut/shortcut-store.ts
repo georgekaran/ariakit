@@ -1,4 +1,4 @@
-import { createStore, setup, sync } from "@ariakit/store";
+import { batch, createStore, setup, sync } from "@ariakit/store";
 import type { Store, StoreProps } from "@ariakit/store";
 import { canUseDOM, isElement, isTextbox } from "@ariakit/utils";
 import type { BooleanOrCallback } from "@ariakit/utils";
@@ -163,14 +163,16 @@ interface MergedCommand {
   scope?: ShortcutScopeRef | ShortcutScopeRef[] | null;
   /**
    * NOT a merge of every registration's `enabled`: it is the `enabled` of
-   * whichever registration owns `onTrigger` above (`true` when none does),
-   * for `trigger()`/`runOnTrigger()`. Dispatch never reads this field; it
-   * checks each candidate registration's own `enabled` directly.
+   * whichever registration owns `onTrigger` above (`true` when none does).
+   * Meaningful only while that owner exists: `trigger()`, `runOnTrigger()`
+   * and `getAvailability()` read it for that case, and fall back to the
+   * reference elements themselves otherwise. Dispatch never reads this
+   * field; it checks each candidate registration's own `enabled` directly.
    */
   enabled: boolean;
   enabledInTextbox?: BooleanOrCallback<ShortcutEvent>;
-  /** Reference elements, in registration order. */
-  elements: Array<{ id: number; get: () => Element | null }>;
+  /** Reference elements, in registration order, each with its own `enabled`. */
+  elements: Array<{ id: number; get: () => Element | null; enabled: boolean }>;
 }
 
 export interface ShortcutScopeOptions {
@@ -241,7 +243,7 @@ export interface ShortcutStoreProps extends StoreProps<ShortcutStoreState> {
   store?: ShortcutStore;
 }
 
-/** A command's current, by-name availability. @see ShortcutStoreFunctions.getAvailability */
+/** A command's current, by-name availability. @see ShortcutStoreInternalFunctions.getAvailability */
 export interface ShortcutAvailability {
   /** Whether the command's effective `enabled` allows it to fire. */
   enabled: boolean;
@@ -294,6 +296,31 @@ export interface ShortcutStoreFunctions {
    */
   trigger: (command: string) => boolean;
   /**
+   * Adds another document to the dispatcher and returns a detach function.
+   * The listener is on the ambient document by default, so a same-origin
+   * iframe is opt-in.
+   */
+  attach: (doc: Document) => () => void;
+  /**
+   * Renders a `keys` declaration as a plain string, filling `platform`,
+   * `glyphs` and `keyNames` from the store's current state when omitted.
+   * @example
+   * store.formatKeys("mod+S"); // "⌘S" on Apple
+   */
+  formatKeys: (keys: string, options?: ShortcutFormatOptions) => string;
+}
+
+export interface ShortcutStore
+  extends ShortcutStoreFunctions, Store<ShortcutStoreState> {}
+
+/**
+ * @internal Store capabilities a framework binding needs but a consumer
+ * should never see on the public `ShortcutStore` type: the click bridge's
+ * entry point, the by-name read behind `<Shortcut command>`, and SSR
+ * platform gating.
+ */
+export interface ShortcutStoreInternalFunctions {
+  /**
    * Runs the merged declaration's `onTrigger` for a command by name, if one
    * is defined. Unlike `trigger()`, it never activates an element, so it is
    * safe to call from the click bridge: the click already happened.
@@ -324,26 +351,11 @@ export interface ShortcutStoreFunctions {
    * store.isPlatformExplicit(); // false unless `platform` was passed
    */
   isPlatformExplicit: () => boolean;
-  /**
-   * Adds another document to the dispatcher and returns a detach function.
-   * The listener is on the ambient document by default, so a same-origin
-   * iframe is opt-in.
-   */
-  attach: (doc: Document) => () => void;
-  /**
-   * Renders a `keys` declaration as a plain string, filling `platform`,
-   * `glyphs` and `keyNames` from the store's current state when omitted.
-   * @example
-   * store.formatKeys("mod+S"); // "⌘S" on Apple
-   */
-  formatKeys: (keys: string, options?: ShortcutFormatOptions) => string;
 }
 
-export interface ShortcutStore
-  extends ShortcutStoreFunctions, Store<ShortcutStoreState> {}
-
 /** @internal The concrete shape every store built by this module actually has. */
-interface ShortcutStoreInternal extends ShortcutStore {
+interface ShortcutStoreInternal
+  extends ShortcutStore, ShortcutStoreInternalFunctions {
   uid: number;
   parent?: ShortcutStoreInternal;
   children: Set<ShortcutStoreInternal>;
@@ -354,6 +366,7 @@ interface ShortcutStoreInternal extends ShortcutStore {
   mergedCache: Map<string, MergedCommand>;
   scopeRegistry: Set<ScopeRecord>;
   documentRefs: Map<Document, number>;
+  registryStore: Store<{ version: number }>;
 }
 
 function asInternal(store: ShortcutStore): ShortcutStoreInternal {
@@ -439,19 +452,32 @@ function releaseDocument(store: ShortcutStoreInternal, doc: Document) {
   }
 }
 
+// Follows `aria-activedescendant` from `element` into that node's OWN root,
+// not into `document`. Shared by every way of resolving a focus origin, so
+// none of them can drift from another.
+function resolveActiveDescendant(element: Element): Element {
+  const activeDescendantId = element.getAttribute("aria-activedescendant");
+  if (!activeDescendantId) return element;
+  const root = element.getRootNode() as Document | ShadowRoot;
+  const descendant = root.getElementById?.(activeDescendantId);
+  return descendant ?? element;
+}
+
 function resolveFocusOrigin(event: KeyboardEvent): Element | null {
   const composed =
     typeof event.composedPath === "function" ? event.composedPath() : null;
-  let origin: EventTarget | null = composed?.[0] ?? event.target;
+  const origin: EventTarget | null = composed?.[0] ?? event.target;
   if (!isElement(origin)) return null;
-  const activeDescendantId = origin.getAttribute("aria-activedescendant");
-  if (activeDescendantId) {
-    // Resolve into that node's OWN root, not into `document`.
-    const root = origin.getRootNode() as Document | ShadowRoot;
-    const descendant = root.getElementById?.(activeDescendantId);
-    if (descendant) origin = descendant;
-  }
-  return origin as Element;
+  return resolveActiveDescendant(origin);
+}
+
+// The activeElement analog of `resolveFocusOrigin`, for a caller with no
+// event to read `composedPath` from.
+function resolveActiveElementOrigin(): Element | null {
+  if (!canUseDOM) return null;
+  const active = document.activeElement;
+  if (!active) return null;
+  return resolveActiveDescendant(active);
 }
 
 function buildFocusPath(origin: Element): Element[] {
@@ -610,7 +636,11 @@ function computeMergedCommand(
     }
     if (registration.element !== undefined) {
       const element = registration.element;
-      merged.elements.push({ id, get: () => resolveElement(element) });
+      merged.elements.push({
+        id,
+        get: () => resolveElement(element),
+        enabled: registration.enabled ?? true,
+      });
     }
   }
   for (const field of conflicts) {
@@ -684,6 +714,7 @@ function getSoloMerged(registration: Registration): MergedCommand {
             {
               id: registration.id,
               get: () => resolveElement(registration.element),
+              enabled: registration.enabled ?? true,
             },
           ]
         : [],
@@ -706,10 +737,15 @@ interface Candidate {
   scopeDepth: number;
 }
 
-/** Picks the last-registered, currently live reference element. */
+/** Picks the last-registered, currently live, enabled reference element. */
 function pickHighestRankedReference(merged: MergedCommand): Element | null {
   for (let i = merged.elements.length - 1; i >= 0; i -= 1) {
-    const element = merged.elements[i]?.get();
+    const entry = merged.elements[i];
+    if (!entry) continue;
+    // The registration's own `enabled` and the element's DOM state are
+    // independent reasons to skip a reference; both must hold to pick it.
+    if (!entry.enabled) continue;
+    const element = entry.get();
     if (!element) continue;
     if (!isShortcutElementEnabled(element)) continue;
     if (element.closest("[inert]")) continue;
@@ -990,6 +1026,17 @@ export function createShortcutStore(
   const documentRefs = new Map<Document, number>();
   let nextId = 0;
 
+  // Separate from `shortcut`: registerCommand mutates the registry outside
+  // reactive state, so getKeys/getAvailability have nothing there to
+  // subscribe to. This gives them something, without folding a change
+  // meaningless to the rest of ShortcutStoreState into "keys" or "platform".
+  // Batched, so a burst of registrations in one tick notifies once, not once
+  // per registration.
+  const registryStore = createStore({ version: 0 });
+  function notifyRegistryChange() {
+    registryStore.setState("version", (version) => version + 1);
+  }
+
   const store: ShortcutStoreInternal = {
     ...shortcut,
     uid: nextStoreUid++,
@@ -1002,6 +1049,7 @@ export function createShortcutStore(
     mergedCache,
     scopeRegistry,
     documentRefs,
+    registryStore,
     setEnabled,
     registerCommand,
     registerScope,
@@ -1097,6 +1145,7 @@ export function createShortcutStore(
       }
       ids.add(id);
       reindexName(store, registration.command);
+      notifyRegistryChange();
     } else {
       reindexUnnamed(store, id);
     }
@@ -1119,6 +1168,7 @@ export function createShortcutStore(
         } else {
           reindexName(store, name);
         }
+        notifyRegistryChange();
       }
       if (canUseDOM) releaseDocument(store, document);
     };
@@ -1208,7 +1258,15 @@ export function createShortcutStore(
 
   function getAvailability(command: string): ShortcutAvailability {
     const merged = mergedCache.get(command);
-    const enabled = !!merged && merged.enabled && shortcut.getState().enabled;
+    // No `onTrigger` owner means dispatch would click a reference instead:
+    // `merged.enabled` defaults to true for that case (see its own doc), so
+    // it cannot answer this alone. Ask the same question dispatch asks.
+    const commandEnabled = merged
+      ? merged.onTrigger
+        ? merged.enabled
+        : pickHighestRankedReference(merged) !== null
+      : false;
+    const enabled = commandEnabled && shortcut.getState().enabled;
     return { enabled, inScope: isDeclaredScopeFocused(merged?.scope) };
   }
 
@@ -1216,18 +1274,17 @@ export function createShortcutStore(
     return platformExplicit;
   }
 
-  // Mirrors dispatch's own scope resolution (resolveScopeDepth) against
-  // live focus, so this never disagrees with what pressing the key right
-  // now would do. `document.activeElement` is only null before a document
-  // has a body.
+  // Mirrors dispatch's own origin and scope resolution
+  // (resolveActiveElementOrigin, resolveScopeDepth) against live focus, so
+  // this never disagrees with what pressing the key right now would do.
+  // `document.activeElement` is only null before a document has a body.
   function isDeclaredScopeFocused(
     scopeOption: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
   ): boolean {
     if (scopeOption == null) return true;
-    if (!canUseDOM) return true;
-    const active = document.activeElement;
-    if (!active) return true;
-    const path = buildFocusPath(active);
+    const origin = resolveActiveElementOrigin();
+    if (!origin) return true;
+    const path = buildFocusPath(origin);
     return resolveScopeDepth(scopeOption, path, scopeRegistry) !== null;
   }
 
@@ -1254,6 +1311,19 @@ export function createShortcutStore(
   }
 
   return store;
+}
+
+/**
+ * @internal Lets the React binding re-render `useShortcutKeys` and
+ * `useShortcutAvailability` after `registerCommand` changes what a by-name
+ * read resolves to, since the registry lives in a private closure outside
+ * reactive state. Returns an unsubscribe function.
+ */
+export function subscribeToShortcutRegistry(
+  store: ShortcutStore,
+  listener: () => void,
+): () => void {
+  return batch(asInternal(store).registryStore, ["version"], listener);
 }
 
 let globalStore: ShortcutStore | undefined;

@@ -11,11 +11,13 @@ interface PaletteCommandProps {
   onTrigger: () => void;
 }
 
-// Rendered below the provider so this headless command and the Palette button
-// register on the same store. A hook called above the provider would fall back
-// to the global store instead, and clicking the button could not reach it.
+// Named "palette" so the button below can reference it: a click bridges to
+// whichever registration owns that name, not to one sharing its keys.
+// Rendered below the provider so both share the same store; a hook called
+// above the provider would register on the global store instead, out of
+// the button's reach.
 function PaletteCommand({ onTrigger }: PaletteCommandProps) {
-  useShortcutCommand({ keys: "mod+K", onTrigger });
+  useShortcutCommand({ command: "palette", keys: "mod+K", onTrigger });
   return null;
 }
 
@@ -45,7 +47,8 @@ export default function Example() {
         >
           Italic <Shortcut />
         </ShortcutCommand>
-        <ShortcutCommand className="button" keys="mod+K">
+        {/* A pure reference: no keys of its own, just the shared name. */}
+        <ShortcutCommand className="button" command="palette">
           Palette <Shortcut />
         </ShortcutCommand>
       </div>

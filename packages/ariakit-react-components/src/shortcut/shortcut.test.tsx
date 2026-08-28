@@ -1,5 +1,6 @@
 import { formatKeys } from "@ariakit/components/shortcut/glyphs";
-import { focus, q, render } from "@ariakit/test/react";
+import { createShortcutStore } from "@ariakit/components/shortcut/shortcut-store";
+import { focus, q, render, waitFor } from "@ariakit/test/react";
 import { afterEach, expect, test } from "vitest";
 import { ShortcutCommand } from "./shortcut-command.tsx";
 import { ShortcutProvider } from "./shortcut-provider.tsx";
@@ -333,4 +334,41 @@ test("a single-key shortcut renders no joiner", async () => {
   const outer = outerKbd();
   expect(outer.children.length).toBe(1);
   expect(outer.textContent).toBe("Escape");
+});
+
+test("renders nothing when no binding resolves for the platform", async () => {
+  await renderTree(
+    <ShortcutProvider platform="apple">
+      <Shortcut keys="pc:Control+K" />
+    </ShortcutProvider>,
+  );
+
+  // A pc-only alternative has no Apple binding, so nothing resolves, and the
+  // kbd element itself must not render, not just its children.
+  expect(document.querySelector("kbd")).toBe(null);
+});
+
+test("unbinding a named command clears its hint and aria-keyshortcuts", async () => {
+  const store = createShortcutStore();
+
+  await renderTree(
+    <ShortcutProvider store={store}>
+      <ShortcutCommand command="save" keys="Control+S" onTrigger={() => {}}>
+        Save <Shortcut />
+      </ShortcutCommand>
+    </ShortcutProvider>,
+  );
+
+  const button = q.button.ensure("Save");
+  expect(button.getAttribute("aria-keyshortcuts")).toBe("Control+S");
+  expect(document.querySelector("kbd[data-key]")).not.toBe(null);
+
+  store.setKeys("save", null);
+
+  // A remap or an unbind is the registry's own answer, not a gap the
+  // display should paper over with what this render once declared.
+  await waitFor(() => {
+    expect(button.getAttribute("aria-keyshortcuts")).toBe(null);
+    expect(document.querySelector("kbd")).toBe(null);
+  });
 });

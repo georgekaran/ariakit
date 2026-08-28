@@ -179,7 +179,16 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
  */
 export const Shortcut = forwardRef(function Shortcut(props: ShortcutProps) {
   const htmlProps = useShortcut(props);
-  return createElement(TagName, htmlProps);
+  // createElement runs a hook of its own, so it stays unconditional here;
+  // only the choice of returning its result is conditional. An empty kbd
+  // would assert "here is a keyboard key" with no key in it, so nothing
+  // renders until there are keys to show. The hidden, out-of-scope case is
+  // unrelated: that hint still has keys, so it keeps its layout box.
+  const element = createElement(TagName, htmlProps);
+  if (Array.isArray(htmlProps.children) && !htmlProps.children.length) {
+    return null;
+  }
+  return element;
 });
 
 export interface ShortcutOptions<

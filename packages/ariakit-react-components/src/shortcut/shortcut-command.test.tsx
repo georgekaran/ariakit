@@ -5,6 +5,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { ShortcutCommand } from "./shortcut-command.tsx";
 import { useShortcutContext } from "./shortcut-context.tsx";
 import { ShortcutProvider } from "./shortcut-provider.tsx";
+import { ShortcutScope } from "./shortcut-scope.tsx";
 import {
   useShortcutAvailability,
   useShortcutCommand,
@@ -47,6 +48,106 @@ test("a declaration in one place and a reference in another both work", async ()
 
   expect(ariaKeyShortcuts(q.button.ensure("Save"))).toBe("Control+S");
   await press("s", document.body, { ctrlKey: true });
+  expect(onTrigger).toHaveBeenCalledTimes(1);
+});
+
+test("a reference in another scope does not redeclare the command's scope", async () => {
+  const onTrigger = vi.fn();
+
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutScope>
+        <ShortcutCommand command="save" keys="Control+S" onTrigger={onTrigger}>
+          Save
+        </ShortcutCommand>
+        <input aria-label="inside a" />
+      </ShortcutScope>
+      <ShortcutScope>
+        <ShortcutCommand command="save">Save reference</ShortcutCommand>
+      </ShortcutScope>
+    </ShortcutProvider>,
+  );
+
+  const insideA = q.textbox.ensure("inside a");
+  await focus(insideA);
+  await press("s", insideA, { ctrlKey: true });
+  expect(onTrigger).toHaveBeenCalledTimes(1);
+});
+
+test("a reference in another scope emits no duplicate-declaration warning", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutScope>
+        <ShortcutCommand command="save" keys="Control+S" onTrigger={() => {}}>
+          Save
+        </ShortcutCommand>
+      </ShortcutScope>
+      <ShortcutScope>
+        <ShortcutCommand command="save">Save reference</ShortcutCommand>
+      </ShortcutScope>
+    </ShortcutProvider>,
+  );
+
+  expect(warn).not.toHaveBeenCalled();
+  warn.mockRestore();
+});
+
+test("a headless command inherits the enclosing scope", async () => {
+  const onTrigger = vi.fn();
+
+  function Declare() {
+    useShortcutCommand({ command: "save", keys: "Control+S", onTrigger });
+    return null;
+  }
+
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutScope>
+        <Declare />
+        <input aria-label="inside" />
+      </ShortcutScope>
+      <input aria-label="outside" />
+    </ShortcutProvider>,
+  );
+
+  const outside = q.textbox.ensure("outside");
+  await focus(outside);
+  await press("s", outside, { ctrlKey: true });
+  expect(onTrigger).not.toHaveBeenCalled();
+
+  const inside = q.textbox.ensure("inside");
+  await focus(inside);
+  await press("s", inside, { ctrlKey: true });
+  expect(onTrigger).toHaveBeenCalledTimes(1);
+});
+
+test("a headless command with an explicit scope keeps it", async () => {
+  const onTrigger = vi.fn();
+
+  function Declare() {
+    useShortcutCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger,
+      scope: null,
+    });
+    return null;
+  }
+
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutScope>
+        <Declare />
+      </ShortcutScope>
+      <input aria-label="outside" />
+    </ShortcutProvider>,
+  );
+
+  const outside = q.textbox.ensure("outside");
+  await focus(outside);
+  await press("s", outside, { ctrlKey: true });
   expect(onTrigger).toHaveBeenCalledTimes(1);
 });
 

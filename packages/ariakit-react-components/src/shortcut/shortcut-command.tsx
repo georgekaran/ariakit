@@ -34,7 +34,12 @@ import {
   useShortcutContext,
 } from "./shortcut-context.tsx";
 import type { ShortcutStore } from "./shortcut-store.ts";
-import { useShortcutKeys, useShortcutPlatform } from "./shortcut-store.ts";
+import {
+  resolveCommandScope,
+  resolveScopeElement,
+  useShortcutKeys,
+  useShortcutPlatform,
+} from "./shortcut-store.ts";
 
 const TagName = "button" satisfies ElementType;
 type TagName = typeof TagName;
@@ -43,13 +48,6 @@ type HTMLType = HTMLElementTagNameMap[TagName];
 // A stable reference, not `[]` inline: commandContextValue's own useMemo
 // depends on resolvedKeys, so a fresh array each render would defeat it.
 const NO_KEYS: string[] = [];
-
-function resolveScopeElement(
-  element: Element | (() => Element | null) | undefined,
-): Element | null {
-  if (!element) return null;
-  return typeof element === "function" ? element() : element;
-}
 
 // runOnTrigger is not part of ShortcutStore's public type: it is the click
 // bridge's own entry point, not a published capability, but every store
@@ -99,24 +97,6 @@ function isInScope(
 }
 
 /**
- * Resolves the `scope` option a command registers with: an explicit `scope`
- * prop wins, `null` opts out, and `undefined` inherits the closest
- * `ShortcutScope` from React context.
- */
-function resolveCommandScope(
-  scope: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
-  scopeContext: ShortcutScopeHandle | undefined,
-): ShortcutScopeRef | ShortcutScopeRef[] | null | undefined {
-  if (scope !== undefined) return scope;
-  if (!scopeContext) return undefined;
-  return {
-    get current() {
-      return resolveScopeElement(scopeContext.element);
-    },
-  };
-}
-
-/**
  * Whether the element is disabled, including through an ancestor
  * `<fieldset disabled>`. `disabledFromElement` alone is not enough: like
  * `element.inert`, which is `false` on a descendant of an inert subtree, so
@@ -161,9 +141,14 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     const store = storeProp ?? context;
     const ref = useRef<HTMLType>(null);
     const scopeContext = useContext(ShortcutScopeContext);
+    const isDeclaration =
+      keys !== undefined ||
+      onTriggerProp !== undefined ||
+      preventDefault !== undefined ||
+      enabledInTextbox !== undefined;
     const resolvedScope = useMemo(
-      () => resolveCommandScope(scopeProp, scopeContext),
-      [scopeProp, scopeContext],
+      () => resolveCommandScope(scopeProp, scopeContext, isDeclaration),
+      [scopeProp, scopeContext, isDeclaration],
     );
     const hasTrigger = !!onTriggerProp;
     const onTrigger = useEvent(onTriggerProp);
@@ -185,9 +170,17 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     });
     const ownEnabled = enabledProp ?? !(propsDisabled || elementDisabled);
 
+    // Corrects to true once the registration effect below has actually run.
+    // Before that, an empty namedKeys reading just means the registry has
+    // not been asked yet; afterward, it means this command's entry genuinely
+    // resolves to nothing, whether never bound or unbound by a later
+    // setKeys(name, null), and must not be second-guessed.
+    const [registered, setRegistered] = useState(false);
+
     // Registered eagerly enough to settle before paint, and re-registered
     // (not updated) whenever an option changes.
     useSafeLayoutEffect(() => {
+      setRegistered(true);
       return store.registerCommand({
         command,
         keys,
@@ -243,9 +236,18 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
       () => (keys ? resolveKeys(keys, platform).map((r) => r.text) : []),
       [keys, platform],
     );
+    // Before registered, this render's own declared keys are the best
+    // available answer, since the registry has not been asked yet, which is
+    // the case throughout renderToString. Once registered, the registry is
+    // authoritative even when it reports nothing: that silence is the
+    // legitimate answer for an unbound or never-declared name, not a gap to
+    // paper over. A pure reference has no declared keys of its own, so it
+    // renders nothing either way until the declaration's registration lands.
     const resolvedKeys = settled
       ? command
-        ? namedKeys
+        ? registered
+          ? namedKeys
+          : declaredKeys
         : declaredKeys
       : NO_KEYS;
     const first = resolvedKeys[0];

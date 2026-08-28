@@ -11,16 +11,23 @@ export interface SsrShortcutProps {
    */
   platform?: "apple" | "windows" | "other";
   keys?: string;
+  /**
+   * Names the command, so its keys round-trip through the store registry
+   * instead of being read straight off this render's own `keys` prop.
+   */
+  command?: string;
 }
 
 export function SsrShortcut({
   platform,
   keys = "apple:Meta+B",
+  command,
 }: SsrShortcutProps = {}) {
   const [clicks, setClicks] = useState(0);
   return (
     <ShortcutProvider platform={platform}>
       <ShortcutCommand
+        command={command}
         keys={keys}
         onClick={() => setClicks((clicks) => clicks + 1)}
       >

@@ -106,3 +106,20 @@ test('with platform="apple", the server renders both and hydration keeps the sho
     },
   );
 });
+
+test("a named command with an explicit platform renders keys on the server", async () => {
+  await renderAndHydrate(
+    createElement<SsrShortcutProps>(SsrShortcut, {
+      platform: "apple",
+      command: "save",
+      keys: "mod+S",
+    }),
+    (container) => {
+      const button = container.querySelector("button");
+      expect(button).toHaveAttribute("aria-keyshortcuts", "Meta+S");
+      expect(
+        container.querySelectorAll("kbd[data-key]").length,
+      ).toBeGreaterThan(0);
+    },
+  );
+});

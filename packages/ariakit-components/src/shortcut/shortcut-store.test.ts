@@ -1,7 +1,12 @@
 import { init } from "@ariakit/store";
 import { afterEach, expect, test, vi } from "vitest";
 import { createShortcutStore } from "./shortcut-store.ts";
-import type { ShortcutClickEvent, ShortcutEvent } from "./shortcut-store.ts";
+import type {
+  ShortcutClickEvent,
+  ShortcutEvent,
+  ShortcutStore,
+  ShortcutStoreInternalFunctions,
+} from "./shortcut-store.ts";
 
 // Every store in this file shares its document's single dispatcher while it
 // has registrations. Leaked registrations from one test would dispatch (and
@@ -36,6 +41,12 @@ function dispatchAltKeydown(target: Element, key: string) {
   event.getModifierState = (name: string) => name === "Alt";
   target.dispatchEvent(event);
   return event;
+}
+
+// runOnTrigger and getAvailability are not part of ShortcutStore's public
+// type; every store this module builds still carries them.
+function asInternal(store: ShortcutStore): ShortcutStoreInternalFunctions {
+  return store as unknown as ShortcutStoreInternalFunctions;
 }
 
 test("a nested level does not clobber its parent's registry", () => {
@@ -147,6 +158,61 @@ test("a disabled reference does not disable the whole named command", () => {
   // The disabled reference must stop only itself, not the declaration: the
   // keyboard still runs the handler through the reference that IS live.
   expect(ran).toEqual(["handler"]);
+});
+
+test("a disabled reference is not activated by the keyboard", () => {
+  const store = createShortcutStore();
+  const button = document.createElement("button");
+  document.body.append(button);
+  let clicked = false;
+  button.addEventListener("click", () => {
+    clicked = true;
+  });
+  track(store.registerCommand({ command: "save", keys: "Control+S" }));
+  track(
+    store.registerCommand({ command: "save", element: button, enabled: false }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true }),
+  );
+  // The only reference under this name is disabled at the registration
+  // level: the keyboard must find no live target, not click it anyway.
+  expect(clicked).toBe(false);
+  button.remove();
+});
+
+test("a disabled reference is skipped in favour of an enabled one", () => {
+  const store = createShortcutStore();
+  const enabledButton = document.createElement("button");
+  const disabledButton = document.createElement("button");
+  document.body.append(enabledButton, disabledButton);
+  let enabledClicked = false;
+  let disabledClicked = false;
+  enabledButton.addEventListener("click", () => {
+    enabledClicked = true;
+  });
+  disabledButton.addEventListener("click", () => {
+    disabledClicked = true;
+  });
+  track(store.registerCommand({ command: "save", keys: "Control+S" }));
+  track(store.registerCommand({ command: "save", element: enabledButton }));
+  // Registered LAST, so a bug that stops at the first disabled reference,
+  // instead of skipping past it, would pick this one over the earlier,
+  // enabled one.
+  track(
+    store.registerCommand({
+      command: "save",
+      element: disabledButton,
+      enabled: false,
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true }),
+  );
+  expect(enabledClicked).toBe(true);
+  expect(disabledClicked).toBe(false);
+  enabledButton.remove();
+  disabledButton.remove();
 });
 
 test("several references under one name emit no duplicate-declaration warning", () => {
@@ -868,7 +934,7 @@ test("runOnTrigger runs a merged declaration without activating an element", () 
     target: button,
     originalEvent: new MouseEvent("click"),
   };
-  expect(store.runOnTrigger("save", event)).toBe(true);
+  expect(asInternal(store).runOnTrigger("save", event)).toBe(true);
   expect(ran).toEqual(["handler"]);
   // The merged declaration's onTrigger ran; the reference element itself
   // was never clicked.
@@ -894,7 +960,7 @@ test("runOnTrigger never clicks a reference element", () => {
     target: button,
     originalEvent: new MouseEvent("click"),
   };
-  expect(store.runOnTrigger("save", event)).toBe(false);
+  expect(asInternal(store).runOnTrigger("save", event)).toBe(false);
   expect(onClick).not.toHaveBeenCalled();
   button.remove();
 });
@@ -921,10 +987,10 @@ test("runOnTrigger respects enabled", () => {
     target: region,
     originalEvent: new MouseEvent("click"),
   };
-  expect(store.runOnTrigger("palette", event)).toBe(true);
+  expect(asInternal(store).runOnTrigger("palette", event)).toBe(true);
   expect(ran).toEqual(["x"]);
   store.setEnabled(false);
-  expect(store.runOnTrigger("palette", event)).toBe(false);
+  expect(asInternal(store).runOnTrigger("palette", event)).toBe(false);
   expect(ran).toEqual(["x"]);
   store.setEnabled(true);
   region.remove();
@@ -946,7 +1012,7 @@ test("runOnTrigger returns false when the handler declines", () => {
     target: null,
     originalEvent: new MouseEvent("click"),
   };
-  expect(store.runOnTrigger("save", event)).toBe(false);
+  expect(asInternal(store).runOnTrigger("save", event)).toBe(false);
 });
 
 /* ---------------------------------------------------------------------- *
@@ -976,14 +1042,14 @@ test("getAvailability's enabled is the store chain's enabled ANDed with the decl
       onTrigger: () => {},
     }),
   );
-  expect(store.getAvailability("save")).toEqual({
+  expect(asInternal(store).getAvailability("save")).toEqual({
     enabled: true,
     inScope: true,
   });
   store.setEnabled(false);
-  expect(store.getAvailability("save").enabled).toBe(false);
+  expect(asInternal(store).getAvailability("save").enabled).toBe(false);
   store.setEnabled(true);
-  expect(store.getAvailability("save").enabled).toBe(true);
+  expect(asInternal(store).getAvailability("save").enabled).toBe(true);
 });
 
 test("getAvailability's enabled follows the declaring registration's own enabled, not a reference's", () => {
@@ -1000,12 +1066,28 @@ test("getAvailability's enabled follows the declaring registration's own enabled
   track(store.registerCommand({ command: "save", element: button }));
   // The declaration itself is disabled; the live reference does not
   // override that for a by-name read.
-  expect(store.getAvailability("save").enabled).toBe(false);
+  expect(asInternal(store).getAvailability("save").enabled).toBe(false);
+});
+
+test("availability reports a disabled element-only command as unavailable", () => {
+  const store = createShortcutStore();
+  const button = document.createElement("button");
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      element: button,
+      enabled: false,
+    }),
+  );
+  // No `onTrigger` owner exists anywhere under this name, so the reference
+  // itself is the only registration, and it is disabled.
+  expect(asInternal(store).getAvailability("save").enabled).toBe(false);
 });
 
 test("getAvailability is false for a command with no live declaration", () => {
   const store = createShortcutStore();
-  expect(store.getAvailability("missing")).toEqual({
+  expect(asInternal(store).getAvailability("missing")).toEqual({
     enabled: false,
     inScope: true,
   });
@@ -1014,7 +1096,7 @@ test("getAvailability is false for a command with no live declaration", () => {
 test("getAvailability's inScope is true when the command declares no scope", () => {
   const store = createShortcutStore();
   track(store.registerCommand({ command: "save", keys: "Control+S" }));
-  expect(store.getAvailability("save").inScope).toBe(true);
+  expect(asInternal(store).getAvailability("save").inScope).toBe(true);
 });
 
 test("getAvailability's inScope reflects live focus containment for a declared scope", () => {
@@ -1031,9 +1113,9 @@ test("getAvailability's inScope reflects live focus containment for a declared s
       onTrigger: () => {},
     }),
   );
-  expect(store.getAvailability("palette").inScope).toBe(false);
+  expect(asInternal(store).getAvailability("palette").inScope).toBe(false);
   input.focus();
-  expect(store.getAvailability("palette").inScope).toBe(true);
+  expect(asInternal(store).getAvailability("palette").inScope).toBe(true);
   input.blur();
   region.remove();
 });
@@ -1060,10 +1142,52 @@ test("getAvailability's inScope is scope-tree-aware, matching dispatch for a por
   );
   input.focus();
   // Plain DOM containment would fail here, the same as dispatch itself.
-  expect(store.getAvailability("scoped").inScope).toBe(true);
+  expect(asInternal(store).getAvailability("scoped").inScope).toBe(true);
   input.blur();
   unregisterChild();
   unregisterParent();
   outer.remove();
   popup.remove();
+});
+
+test("availability follows aria-activedescendant like dispatch does", () => {
+  const store = createShortcutStore();
+  const region = document.createElement("div");
+  const option = document.createElement("div");
+  option.id = "option-1";
+  region.append(option);
+  const combobox = document.createElement("input");
+  document.body.append(combobox, region);
+  // Real focus stays on the combobox, outside the region; only
+  // aria-activedescendant reaches inside it, the way a Combobox or Select
+  // reports its virtually focused option.
+  combobox.setAttribute("aria-activedescendant", "option-1");
+  combobox.focus();
+
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      command: "select",
+      keys: "Control+K",
+      scope: region,
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  combobox.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  const keypressRanIt = ran.length > 0;
+  // Assert against what the keypress actually did, not a hardcoded
+  // expectation, so availability and dispatch cannot silently drift apart.
+  expect(asInternal(store).getAvailability("select").inScope).toBe(
+    keypressRanIt,
+  );
+
+  combobox.remove();
+  region.remove();
 });

@@ -2,10 +2,7 @@ export type {
   ShortcutOptions,
   ShortcutProps,
 } from "@ariakit/react-components/shortcut/shortcut";
-export {
-  Shortcut,
-  useShortcut,
-} from "@ariakit/react-components/shortcut/shortcut";
+export { Shortcut } from "@ariakit/react-components/shortcut/shortcut";
 export type {
   ShortcutCommandOptions,
   ShortcutCommandProps,
@@ -20,28 +17,20 @@ export type {
   ShortcutInputOptions,
   ShortcutInputProps,
 } from "@ariakit/react-components/shortcut/shortcut-input";
-export {
-  ShortcutInput,
-  useShortcutInput,
-} from "@ariakit/react-components/shortcut/shortcut-input";
+export { ShortcutInput } from "@ariakit/react-components/shortcut/shortcut-input";
 export type { ShortcutProviderProps } from "@ariakit/react-components/shortcut/shortcut-provider";
 export { ShortcutProvider } from "@ariakit/react-components/shortcut/shortcut-provider";
 export type {
   ShortcutScopeOptions,
   ShortcutScopeProps,
 } from "@ariakit/react-components/shortcut/shortcut-scope";
-export {
-  ShortcutScope,
-  useShortcutScope,
-} from "@ariakit/react-components/shortcut/shortcut-scope";
+export { ShortcutScope } from "@ariakit/react-components/shortcut/shortcut-scope";
 export type {
-  ShortcutAvailability,
   ShortcutStore,
   ShortcutStoreProps,
   ShortcutStoreState,
 } from "@ariakit/react-components/shortcut/shortcut-store";
 export {
-  useShortcutAvailability,
   useShortcutCommand,
   useShortcutKeys,
   useShortcutStore,

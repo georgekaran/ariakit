@@ -2,8 +2,41 @@ import * as Core from "@ariakit/components/shortcut/shortcut-store";
 import { useStore, useStoreProps, useStoreState } from "@ariakit/react-store";
 import type { Store } from "@ariakit/react-store";
 import { useSafeLayoutEffect, useUpdateEffect } from "@ariakit/react-utils";
-import { useEffect, useRef, useState } from "react";
-import { useShortcutContext } from "./shortcut-context.tsx";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ShortcutScopeContext,
+  useShortcutContext,
+} from "./shortcut-context.tsx";
+
+export function resolveScopeElement(
+  element: Element | (() => Element | null) | undefined,
+): Element | null {
+  if (!element) return null;
+  return typeof element === "function" ? element() : element;
+}
+
+/**
+ * Resolves the `scope` a registration should carry: an explicit `scope`
+ * wins outright, including `null`, and an unset one inherits the closest
+ * `ShortcutScope` from context, but only when the registration declares
+ * something else. A pure reference, one that supplies nothing beyond
+ * `command`, must not contribute a scope declaration of its own. Shared by
+ * `ShortcutCommand` and `useShortcutCommand`, which register the same way.
+ */
+export function resolveCommandScope(
+  scope: Core.ShortcutScopeRef | Core.ShortcutScopeRef[] | null | undefined,
+  scopeContext: Core.ShortcutScopeHandle | undefined,
+  isDeclaration: boolean,
+): Core.ShortcutScopeRef | Core.ShortcutScopeRef[] | null | undefined {
+  if (scope !== undefined) return scope;
+  if (!isDeclaration) return undefined;
+  if (!scopeContext) return undefined;
+  return {
+    get current() {
+      return resolveScopeElement(scopeContext.element);
+    },
+  };
+}
 
 export function useShortcutStoreProps<T extends Core.ShortcutStore>(
   store: T,
@@ -15,16 +48,34 @@ export function useShortcutStoreProps<T extends Core.ShortcutStore>(
   useStoreProps(store, props, "glyphs");
   useStoreProps(store, props, "keyNames");
 
+  // An adopted store keeps whatever `parent` it had, or didn't, when it was
+  // first created: createShortcutStore, which would have wired this level's
+  // own enclosing chain into it, never ran for it. Relaying the chain's
+  // effective `enabled` here is what makes disabling an outer level still
+  // disable it. A freshly created store needs none of this: its own `parent`
+  // already does the job.
+  const contextParent = useShortcutContext();
+  const chainParent = props.store ? (props.parent ?? contextParent) : undefined;
+  const chainParentEnabled = useStoreState(chainParent, "enabled");
+
   // Not a plain setState: setEnabled ANDs this with the parent's value.
   const { enabled } = props;
   useSafeLayoutEffect(() => {
+    if (chainParent) {
+      store.setEnabled((enabled ?? true) && (chainParentEnabled ?? true));
+      return;
+    }
     if (enabled === undefined) return;
     store.setEnabled(enabled);
   });
 
   // Not one setState of the whole map: that leaves the dispatch index stale.
+  // Starts empty, never seeded from `keys`: an adopted store's own state
+  // never carried the initial map (createShortcutStore, which would have,
+  // never ran), so the first run below has to apply every entry itself
+  // rather than assume it's already there.
   const { keys } = props;
-  const appliedKeysRef = useRef<Record<string, string | null>>(keys ?? {});
+  const appliedKeysRef = useRef<Record<string, string | null>>({});
   useSafeLayoutEffect(() => {
     if (keys === undefined) return;
     const applied = appliedKeysRef.current;
@@ -78,8 +129,9 @@ export function useShortcutStore(
   const parent = useShortcutContext();
   const [store, update] = useStore(createOrAdoptShortcutStore, {
     ...props,
-    // The cast only restores what ShortcutStore's own public type omits
-    // (runOnTrigger), which every store this package builds still carries.
+    // The cast bridges this package's own ShortcutStore type to the
+    // core's: every store this package builds satisfies the core type in
+    // full, even though the two are not structurally identical.
     parent: props.parent ?? (parent as unknown as Core.ShortcutStore),
   });
   return useShortcutStoreProps(store, update, props);
@@ -91,6 +143,12 @@ export function useShortcutStore(
  * Registers a handler-only shortcut command on the shortcut store from
  * context (or the given store). Registers on mount and unregisters on
  * unmount; changing an option means unregister and register, not update.
+ *
+ * An unset `scope` inherits the closest `ShortcutScope` the same way
+ * `<ShortcutCommand>` does, unless this registration declares nothing
+ * beyond `command`, in which case it stays a pure reference and
+ * contributes no scope of its own. An explicit `scope`, including `null`,
+ * always wins.
  * @see https://ariakit.com/components/shortcut
  * @example
  * ```jsx
@@ -108,6 +166,7 @@ export function useShortcutCommand(
 ) {
   const context = useShortcutContext();
   const store = options.store ?? context;
+  const scopeContext = useContext(ShortcutScopeContext);
   const {
     command,
     keys,
@@ -118,6 +177,15 @@ export function useShortcutCommand(
     enabledInTextbox,
     element,
   } = options;
+  const isDeclaration =
+    keys !== undefined ||
+    onTrigger !== undefined ||
+    preventDefault !== undefined ||
+    enabledInTextbox !== undefined;
+  const resolvedScope = useMemo(
+    () => resolveCommandScope(scope, scopeContext, isDeclaration),
+    [scope, scopeContext, isDeclaration],
+  );
 
   useEffect(() => {
     return store.registerCommand({
@@ -125,7 +193,7 @@ export function useShortcutCommand(
       keys,
       onTrigger,
       preventDefault,
-      scope,
+      scope: resolvedScope,
       enabled,
       enabledInTextbox,
       element,
@@ -137,7 +205,7 @@ export function useShortcutCommand(
     keys,
     onTrigger,
     preventDefault,
-    scope,
+    resolvedScope,
     enabled,
     enabledInTextbox,
     element,
@@ -159,6 +227,17 @@ export function useShortcutKeys(options: {
   const context = useShortcutContext();
   const store = options.store ?? context;
   const { command } = options;
+
+  // registerCommand mutates the registry outside reactive state, so a
+  // registration elsewhere never touches "keys" or "platform"; force a
+  // re-render directly, and let the selector below re-resolve fresh.
+  const [, forceUpdate] = useState(0);
+  useSafeLayoutEffect(() => {
+    return Core.subscribeToShortcutRegistry(store, () => {
+      forceUpdate((tick) => tick + 1);
+    });
+  }, [store]);
+
   // store.getKeys() builds a new array on every call. useSyncExternalStore
   // needs getSnapshot referentially stable when nothing changed, or it
   // re-renders forever. The cache below reuses the last array by content.
@@ -188,7 +267,11 @@ export function useShortcutKeys(options: {
  * const settled = useShortcutPlatform(store);
  */
 export function useShortcutPlatform(store: ShortcutStore): boolean {
-  const explicit = store.isPlatformExplicit();
+  // isPlatformExplicit is not part of ShortcutStore's public type, but
+  // every store this package builds still carries it.
+  const explicit = (
+    store as unknown as Core.ShortcutStoreInternalFunctions
+  ).isPlatformExplicit();
   const [mounted, setMounted] = useState(false);
   useSafeLayoutEffect(() => {
     setMounted(true);
@@ -228,12 +311,23 @@ export function useShortcutAvailability(options: {
     };
   }, []);
 
+  // registerCommand mutates the registry outside reactive state, the same
+  // gap useShortcutKeys bridges; see the equivalent effect there.
+  useSafeLayoutEffect(() => {
+    return Core.subscribeToShortcutRegistry(store, () => {
+      forceUpdate((tick) => tick + 1);
+    });
+  }, [store]);
+
   // store.getAvailability() builds a new object on every call. Cache the
   // last result and reuse it by value, the same as useShortcutKeys does
-  // for its array.
+  // for its array. getAvailability is not part of ShortcutStore's public
+  // type, but every store this package builds still carries it.
   const cacheRef = useRef<ShortcutAvailability | undefined>(undefined);
   return useStoreState(store, ["enabled"], () => {
-    const next = store.getAvailability(command);
+    const next = (
+      store as unknown as Core.ShortcutStoreInternalFunctions
+    ).getAvailability(command);
     const prev = cacheRef.current;
     if (
       prev &&
@@ -251,16 +345,9 @@ export interface ShortcutAvailability extends Core.ShortcutAvailability {}
 
 export interface ShortcutStoreState extends Core.ShortcutStoreState {}
 
-// runOnTrigger exists on every store this package builds, but it's a
-// bridge detail omitted here so it never reaches a public consumer.
-export interface ShortcutStoreFunctions extends Omit<
-  Core.ShortcutStoreFunctions,
-  "runOnTrigger"
-> {}
+export interface ShortcutStoreFunctions extends Core.ShortcutStoreFunctions {}
 
 export interface ShortcutStoreProps extends Core.ShortcutStoreProps {}
 
 export interface ShortcutStore
-  extends
-    ShortcutStoreFunctions,
-    Omit<Store<Core.ShortcutStore>, "runOnTrigger"> {}
+  extends ShortcutStoreFunctions, Store<Core.ShortcutStore> {}
