@@ -36,12 +36,11 @@ export const useShortcutScope = createHook<TagName, ShortcutScopeOptions>(
     const ref = useRef<HTMLType>(null);
     const parent = useContext(ShortcutScopeContext);
 
-    // Building this object is pure -- it has no effect beyond itself, so a
-    // discarded StrictMode trial render just leaves garbage for the
-    // collector. It is what makes a descendant that reads this scope from
-    // context on its own first render see a real, stable handle, well
-    // before this component's own layout effect (below) -- let alone a
-    // descendant's, which runs FIRST -- ever runs.
+    // Building this object is pure: it has no effect beyond itself, so a
+    // discarded StrictMode trial render leaves only garbage for the
+    // collector. This is what lets a descendant reading this scope from
+    // context, on its own first render, see a real, stable handle before
+    // this component's layout effect, or any descendant's, ever runs.
     const [ownHandle] = useState<ShortcutScopeHandle>(() => ({
       element: () => ref.current,
       children: new Set(),
@@ -50,18 +49,10 @@ export const useShortcutScope = createHook<TagName, ShortcutScopeOptions>(
     // Registering with the store is the side effect, so it belongs here,
     // never in the useState initializer above: StrictMode double-invokes
     // that initializer and discards one result, which would leak a
-    // registration with no way to ever unregister it.
-    //
-    // A descendant scope links into `ownHandle.children` (via ITS OWN copy
-    // of this same effect, passing `ownHandle` as ITS parent) the moment
-    // ITS layout effect runs -- and layout effects run child-first, so
-    // that already happens before this one does, regardless of when (or
-    // whether) the store below finishes registering this level.
-    //
-    // store.registerScope gets only an element and the parent's element
-    // identity -- never `ownHandle` itself -- and resolves descendants on
-    // its own side by matching that identity, so nothing here reaches into
-    // whatever record the store keeps for the registration.
+    // registration with no way to unregister it. A descendant scope links
+    // into `ownHandle.children` through its own copy of this effect the
+    // moment its layout effect runs, before this one does, since layout
+    // effects run child-first.
     useSafeLayoutEffect(() => {
       parent?.children.add(ownHandle);
       const unregister = store.registerScope({
@@ -96,7 +87,7 @@ export const useShortcutScope = createHook<TagName, ShortcutScopeOptions>(
 /**
  * Renders an element that marks a focus region for shortcuts. Commands whose
  * `scope` inherits from context, and nested `ShortcutScope`s, are only in
- * scope while focus is somewhere inside this region -- its own element, plus
+ * scope while focus is somewhere inside this region: its own element, plus
  * the elements of every scope registered under it, wherever they render in
  * the DOM.
  *

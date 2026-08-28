@@ -24,7 +24,7 @@ function getGlobalReactStore(): ShortcutStore {
     globalReactStore = {
       ...core,
       useState: ((keyOrSelector: never) =>
-        // oxlint-disable-next-line react-hooks/rules-of-hooks -- only reached during render
+        // oxlint-disable-next-line react-hooks/rules-of-hooks
         useStoreState(
           core,
           keyOrSelector,

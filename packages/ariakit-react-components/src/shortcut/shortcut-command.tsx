@@ -41,8 +41,7 @@ type TagName = typeof TagName;
 type HTMLType = HTMLElementTagNameMap[TagName];
 
 // A stable reference, not `[]` inline: commandContextValue's own useMemo
-// depends on resolvedKeys, so a fresh array on every unsettled render would
-// defeat it.
+// depends on resolvedKeys, so a fresh array each render would defeat it.
 const NO_KEYS: string[] = [];
 
 function resolveScopeElement(
@@ -52,17 +51,16 @@ function resolveScopeElement(
   return typeof element === "function" ? element() : element;
 }
 
-// runOnTrigger is not part of ShortcutStore's public type -- it is the
-// click bridge's own entry point, not a published capability -- but every
-// store this package builds still carries it at runtime. This is the one
-// place that needs it back.
+// runOnTrigger is not part of ShortcutStore's public type: it is the click
+// bridge's own entry point, not a published capability, but every store
+// this package builds still carries it at runtime.
 interface StoreWithRunOnTrigger {
   runOnTrigger: (command: string, event: ShortcutEvent) => boolean;
 }
 
 /**
- * Whether the given scope handle's region -- its own element, plus the
- * elements of every child scope registered under it -- currently contains
+ * Whether the given scope handle's region (its own element, plus the
+ * elements of every child scope registered under it) currently contains
  * focus. Not `Node.contains`: a portalled child's element need not be a
  * DOM descendant of its parent's.
  */
@@ -84,8 +82,8 @@ function isRefFocused(ref: ShortcutScopeRef): boolean {
 
 /**
  * Resolves a command's `scope` option into whether its region currently
- * contains focus. A command with no region at all -- `null`, or `undefined`
- * with no enclosing `ShortcutScope` -- is always in scope.
+ * contains focus. A command with no region at all (`null`, or `undefined`
+ * with no enclosing `ShortcutScope`) is always in scope.
  */
 function isInScope(
   scope: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
@@ -121,12 +119,12 @@ function resolveCommandScope(
 /**
  * Whether the element is disabled, including through an ancestor
  * `<fieldset disabled>`. `disabledFromElement` alone is not enough: like
- * `element.inert` -- which is `false` on a descendant of an inert subtree,
- * so the dispatcher itself checks `element.closest("[inert]")` instead (see
- * shortcut-store.ts) -- the `disabled` IDL property reflects only the
+ * `element.inert`, which is `false` on a descendant of an inert subtree, so
+ * the dispatcher itself checks `element.closest("[inert]")` instead (see
+ * shortcut-store.ts), the `disabled` IDL property reflects only the
  * element's own `disabled` content attribute, never inheritance from an
  * enclosing fieldset. The `:disabled` selector covers both cases, and
- * correctly does NOT match a control inside that fieldset's first
+ * correctly does not match a control inside that fieldset's first
  * `<legend>`, which fieldset-disabling explicitly exempts.
  */
 function isElementDisabled(element: Element): boolean {
@@ -141,13 +139,12 @@ function isElementDisabled(element: Element): boolean {
 }
 
 // ShortcutCommand renders a button and adds registration, aria-keyshortcuts,
-// and the click bridge. It deliberately does NOT call useCommand.
-//
-// Calling it would create a duplicate-hook problem under `render`
-// composition, because <MenuItem render={<ShortcutCommand />}> would run
-// useCommand twice. Not calling it also means a `disabled` prop here would
-// not disable the element, unlike every other component in the library,
-// which is why the prop is `enabled` instead. See decisions 11 and 48.
+// and the click bridge. It deliberately does not call useCommand, since
+// that would create a duplicate-hook problem under `render` composition:
+// `<MenuItem render={<ShortcutCommand />}>` would run useCommand twice. Not
+// calling it also means a `disabled` prop here would not disable the
+// element, unlike every other component in the library, which is why the
+// prop is `enabled` instead.
 const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
   function useShortcutCommandProps({
     store: storeProp,
@@ -173,17 +170,15 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
 
     // Defaults to whether the rendered element is disabled, through
     // disabledFromProps and disabledFromElement, so
-    // <MenuItem disabled render={<ShortcutCommand />}> needs no prop at all,
-    // and enabled={false} switches the shortcut off without touching the
-    // element. Deriving it also satisfies ARIA's MUST about disabled
-    // elements for free.
+    // <MenuItem disabled render={<ShortcutCommand />}> needs no prop, and
+    // enabled={false} switches the shortcut off without touching the
+    // element. This also satisfies ARIA's MUST about disabled elements.
     const propsDisabled = disabledFromProps(props);
     const [elementDisabled, setElementDisabled] = useState(false);
-    // The first render keeps the server-safe default; the layout effect
-    // corrects it before paint. Do NOT read ref.current inside a
-    // useStoreState selector for this: the selector re-runs on every state
-    // change and React warns "getSnapshot should be cached" when it returns
-    // a new value each time.
+    // The first render keeps the server-safe default; a layout effect
+    // corrects it before paint. Do not read ref.current inside a
+    // useStoreState selector here, since the selector re-runs on every
+    // state change and React would warn about an uncached snapshot.
     useSafeLayoutEffect(() => {
       const element = ref.current;
       setElementDisabled(!!element && isElementDisabled(element));
@@ -216,15 +211,13 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     ]);
 
     // The command's effective `enabled` is the store's own effective value
-    // (already the AND of every ancestor) ANDed with this registration's own
-    // contribution -- the same gate the dispatcher itself applies.
+    // (already ANDed with every ancestor) ANDed with this registration's own.
     const storeEnabled = useStoreState(store, "enabled");
     const enabled = storeEnabled && ownEnabled;
 
     // Hidden while the command's region is not focused, tracked through a
     // document-level focusin/focusout pair so a focus change anywhere is
-    // seen, not just within this element's own subtree (a scope's region can
-    // include portalled descendants outside it).
+    // seen, including portalled descendants outside this element's subtree.
     const [inScope, setInScope] = useState(true);
     useSafeLayoutEffect(() => {
       const update = () => setInScope(isInScope(resolvedScope, scopeContext));
@@ -241,12 +234,11 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     // platform shortcut property on TWO spaces, while ARIA specifies one, so
     // a multi-shortcut value is mis-spoken.
     const platform = useStoreState(store, "platform");
-    // The server can only guess `platform`, so a keys-bearing command stays
-    // silent until that guess is confirmed real -- see useShortcutPlatform.
+    // Stays silent until `platform` settles; see useShortcutPlatform.
     const settled = useShortcutPlatform(store);
     const namedKeys = useShortcutKeys({ command: command ?? "", store });
-    // An unnamed command has no override to apply -- there is no name to key
-    // one by -- so its declared `keys` is resolved directly.
+    // An unnamed command has no override to apply, since there is no name
+    // to key one by, so its declared `keys` is resolved directly.
     const declaredKeys = useMemo(
       () => (keys ? resolveKeys(keys, platform).map((r) => r.text) : []),
       [keys, platform],
@@ -283,21 +275,12 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     );
 
     // A click on a ShortcutCommand element runs the command the keyboard
-    // would have run, in the other direction:
-    // 1. A click the dispatcher itself fired (or that this same bridge
-    //    already fired) is never re-bridged.
-    // 2 and 3. A genuine click runs the command's onTrigger, by name, from
-    //    the MERGED declaration -- a registration supplying only `command`,
-    //    like this one when there's no onTrigger prop, is a reference, and
-    //    store.runOnTrigger() bridges it to whichever registration under
-    //    that name declared the handler ("declare once,
-    //    reference anywhere"). An unnamed command has nothing to merge, so
-    //    it runs its own local onTrigger directly instead.
-    // 4. No element is ever activated here: the click already happened, so
-    //    firing another one -- even at this same element -- would either be
-    //    a redundant no-op or, worse, invoke a command the user never asked
-    //    for. store.runOnTrigger() never touches an element, which is what
-    //    keeps this direction from looping into the keyboard direction.
+    // would have run, in the other direction. A click the dispatcher (or
+    // this same bridge) already fired is never re-bridged. A named command
+    // runs through store.runOnTrigger(), which bridges to whichever
+    // registration declared the handler; an unnamed command runs its own
+    // local onTrigger directly. See runOnTrigger in shortcut-store.ts for
+    // why no element is ever activated here.
     const onClickProp = props.onClick;
     const onClick = useEvent((event: ReactMouseEvent<HTMLType>) => {
       onClickProp?.(event);

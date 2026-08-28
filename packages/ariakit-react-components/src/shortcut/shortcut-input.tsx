@@ -50,7 +50,7 @@ function matchesKeys(
  * Describes a committed chord as speakable words instead of glyphs, for the
  * live region in step 6. NVDA's `symbols.dic` has no entry for U+21E7 (Shift)
  * or U+2303 (Control), so announcing the raw glyphs would be silent for
- * those two keys. Every canonical key name -- "Meta", "Alt", a letter -- is
+ * those two keys. Every canonical key name ("Meta", "Alt", a letter) is
  * already a readable word on its own, so a spoken-name override only ever
  * replaces it with a better one; it never has to invent a fallback.
  */
@@ -100,7 +100,7 @@ export const useShortcutInput = createHook<TagName, ShortcutInputOptions>(
 
     // Recording starts on focus and ends on blur when uncontrolled: the
     // control has no other affordance to start it (it's an input, not a
-    // button), and every commit -- a chord or a clear -- ends the session the
+    // button), and every commit (a chord or a clear) ends the session the
     // same way a click ends VS Code's and Chromium's own shortcut editors.
     const [uncontrolledRecording, setUncontrolledRecording] = useState(false);
     const recording = recordingProp ?? uncontrolledRecording;
@@ -135,7 +135,7 @@ export const useShortcutInput = createHook<TagName, ShortcutInputOptions>(
 
     // Controlled with no-op onChange: React warns about a value prop with no
     // onChange whenever readOnly is false, which it is while recording. The
-    // actual value never comes from a change event -- see onKeyDown -- so
+    // actual value never comes from a change event (see onKeyDown), so
     // there's nothing to do here beyond passing through a caller's own
     // handler, kept for parity with every other DOM prop.
     const onChangeProp = props.onChange;
@@ -155,11 +155,11 @@ export const useShortcutInput = createHook<TagName, ShortcutInputOptions>(
       if (event.key === "Tab") return;
 
       // Rejects dead keys, IME composition, AltGraph and a lone modifier
-      // press, exactly like the document dispatcher would. Re-derives
-      // held modifiers from the event itself rather than accumulating a set
+      // press, exactly like the document dispatcher would. Re-derives held
+      // modifiers from the event itself rather than accumulating a set
       // across keydowns, so "a", then "b", then "c" replaces the value each
-      // time instead of merging into a sequence -- the defect this guards
-      // against in useRecordHotkeys, which never resets its accumulated set.
+      // time instead of merging into a sequence, the defect useRecordHotkeys
+      // guards against by never resetting its accumulated set.
       const lookup = getEventLookupKeys(event.nativeEvent);
       if (!lookup) return;
 
@@ -202,11 +202,9 @@ export const useShortcutInput = createHook<TagName, ShortcutInputOptions>(
       ...props,
       // Every prop below is what makes this component correct, so none of
       // them are left open for a caller to accidentally override:
-      // data-shortcut-recording is the ONLY thing that stops the document
-      // dispatcher (it runs in the capture phase, ahead of this element's own
-      // handlers, so nothing else reaches it in time -- see onKeyDown above
-      // and the dispatch pipeline), and value/readOnly are the whole point of
-      // a controlled recorder.
+      // data-shortcut-recording is the only thing that stops the document
+      // dispatcher (see the capture-phase note in shortcut-store.ts), and
+      // value/readOnly are the whole point of a controlled recorder.
       readOnly: !recording,
       value: displayValue,
       "data-shortcut-recording": recording || undefined,
@@ -233,7 +231,7 @@ export const useShortcutInput = createHook<TagName, ShortcutInputOptions>(
  * clears it. <kbd>Tab</kbd> is never recorded, so the control is never a
  * keyboard trap.
  *
- * The committed value is canonical text, such as `"Shift+Meta+A"` -- the same
+ * The committed value is canonical text, such as `"Shift+Meta+A"`, the same
  * string [`ShortcutCommand`](https://ariakit.com/reference/shortcut-command)'s
  * `keys` takes, so it needs no conversion. The input only ever DISPLAYS
  * glyphs, through [`formatKeys`](https://ariakit.com/reference/format-keys).

@@ -15,18 +15,14 @@ export function useShortcutStoreProps<T extends Core.ShortcutStore>(
   useStoreProps(store, props, "glyphs");
   useStoreProps(store, props, "keyNames");
 
-  // Not plain setState: ownEnabled is a private closure variable, and only
-  // setEnabled recomputes it ANDed with the parent's effective value.
+  // Not a plain setState: setEnabled ANDs this with the parent's value.
   const { enabled } = props;
   useSafeLayoutEffect(() => {
     if (enabled === undefined) return;
     store.setEnabled(enabled);
   });
 
-  // Not one setState of the whole map either: that would update getKeys()'s
-  // reactive read but leave the physical dispatch index stale, so a
-  // remapped-away binding would keep firing. setKeys, per changed command
-  // name, rewrites both.
+  // Not one setState of the whole map: that leaves the dispatch index stale.
   const { keys } = props;
   const appliedKeysRef = useRef<Record<string, string | null>>(keys ?? {});
   useSafeLayoutEffect(() => {
@@ -47,12 +43,9 @@ export function useShortcutStoreProps<T extends Core.ShortcutStore>(
   return store;
 }
 
-// The command registry, the lookup-key index and the name index all live in
-// private closures, never in reactive state, so createStore's usual
-// state-sync merge (see other *-store.ts files) leaves them empty on a
-// freshly created store. Adopting `store` outright, the same way
-// getGlobalReactStore (shortcut-context.tsx) wraps the global store, is what
-// makes a registration reach both sides.
+// The command registry, key index and name index live in private closures,
+// never reactive state, so createStore's usual state-sync merge would leave
+// them empty. Adopting `store` outright is what makes registration work.
 function createOrAdoptShortcutStore(
   props: Core.ShortcutStoreProps,
 ): Core.ShortcutStore {
@@ -85,21 +78,15 @@ export function useShortcutStore(
   const parent = useShortcutContext();
   const [store, update] = useStore(createOrAdoptShortcutStore, {
     ...props,
-    // Nesting comes from the React tree. An explicit `parent` prop wins, so a
-    // detached store (the `goStore` example) can opt out of the chain. The
-    // cast only restores what ShortcutStore's own public type omits
-    // (runOnTrigger, not part of the published surface) -- every store this
-    // package builds still carries it, parent chaining included.
+    // The cast only restores what ShortcutStore's own public type omits
+    // (runOnTrigger), which every store this package builds still carries.
     parent: props.parent ?? (parent as unknown as Core.ShortcutStore),
   });
   return useShortcutStoreProps(store, update, props);
 }
 
-// The PUBLIC useShortcutCommand is the store hook, exported from
-// shortcut-store.ts. The props hook of the same name stays PRIVATE inside
-// shortcut-command.tsx and is not re-exported from @ariakit/react. This is
-// exactly what useFormSubmit already does: form-store.ts wins the public
-// name, and form-submit.tsx exports only the component.
+// The public useShortcutCommand is the store hook; the props hook of the
+// same name stays private in shortcut-command.tsx (see useFormSubmit).
 /**
  * Registers a handler-only shortcut command on the shortcut store from
  * context (or the given store). Registers on mount and unregisters on
@@ -143,7 +130,7 @@ export function useShortcutCommand(
       enabledInTextbox,
       element,
     });
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- register on mount, unregister/re-register on any option change, never update in place
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [
     store,
     command,
@@ -173,9 +160,8 @@ export function useShortcutKeys(options: {
   const store = options.store ?? context;
   const { command } = options;
   // store.getKeys() builds a new array on every call. useSyncExternalStore
-  // (which useStoreState is built on) requires getSnapshot to return a
-  // referentially stable result when nothing relevant changed, or it
-  // re-renders forever. Cache the last array and reuse it by content.
+  // needs getSnapshot referentially stable when nothing changed, or it
+  // re-renders forever. The cache below reuses the last array by content.
   const cacheRef = useRef<string[]>([]);
   return useStoreState(store, ["keys", "platform"], () => {
     const next = store.getKeys(command);
@@ -195,8 +181,8 @@ export function useShortcutKeys(options: {
  * on both server and client. Otherwise `false` until this component has
  * mounted, matching the initial `false` a server render used too, so
  * hydration never mismatches; a layout effect then flips it to `true`
- * before paint, once the client's own platform detection -- unavailable to
- * the server -- is safe to trust.
+ * before paint, once the client's own platform detection, unavailable to
+ * the server, is safe to trust.
  * @see https://ariakit.com/components/shortcut
  * @example
  * const settled = useShortcutPlatform(store);
@@ -226,10 +212,9 @@ export function useShortcutAvailability(options: {
   const store = options.store ?? context;
   const { command } = options;
 
-  // inScope depends on live DOM focus, which is not store state, so a
-  // focus change alone has to force a re-render for the selector below to
-  // see it -- the same document-level pair ShortcutCommand's own inScope
-  // tracking already relies on.
+  // inScope depends on live DOM focus, not store state, so a focus change
+  // alone has to force a re-render here, the same document-level pair
+  // ShortcutCommand's own inScope tracking relies on.
   const [, forceUpdate] = useState(0);
   useSafeLayoutEffect(() => {
     const update = () => {
@@ -266,10 +251,8 @@ export interface ShortcutAvailability extends Core.ShortcutAvailability {}
 
 export interface ShortcutStoreState extends Core.ShortcutStoreState {}
 
-// runOnTrigger exists on every store this package builds -- the click
-// bridge in shortcut-command.tsx still calls it -- but it is a bridge
-// implementation detail, not a published capability: omitted here, it
-// never reaches a consumer typing against ShortcutStore.
+// runOnTrigger exists on every store this package builds, but it's a
+// bridge detail omitted here so it never reaches a public consumer.
 export interface ShortcutStoreFunctions extends Omit<
   Core.ShortcutStoreFunctions,
   "runOnTrigger"

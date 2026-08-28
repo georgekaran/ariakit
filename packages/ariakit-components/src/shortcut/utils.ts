@@ -80,9 +80,9 @@ export interface ShortcutLookupKeys {
   secondary: string | null;
 }
 
-// Canonical order everywhere except author input, which is free-order. This
-// is simultaneously the Apple HIG symbol order (⌃⌥⇧⌘), Windows accelerator
-// convention, and the form emitted into aria-keyshortcuts.
+// Canonical order everywhere except author input, which is free-order: the
+// Apple HIG symbol order (⌃⌥⇧⌘), Windows accelerator convention, and the
+// form emitted into aria-keyshortcuts.
 const MODIFIERS = ["Control", "Alt", "Shift", "Meta"] as const;
 
 type Modifier = (typeof MODIFIERS)[number];
@@ -140,12 +140,10 @@ const KEY_NAMES = [
   ...Array.from({ length: 20 }, (_, index) => `F${index + 1}`),
 ];
 
-// Keyed by lowercase so a single case-insensitive lookup serves both sides:
-// a declared word such as "space" or "F5", and a live event's raw `key`
-// value. `" "` and `"+"` are their own lowercase form, so the same `.get`
-// call recovers the joiner and separator keys from a live event too, even
-// though the grammar itself never sees them as segments: a space splits
-// alternatives and "+" joins keys before either reaches this table.
+// Keyed by lowercase so one case-insensitive lookup serves both a declared
+// word such as "space" or "F5" and a live event's raw `key` value. `" "`
+// and `"+"` are already lowercase, so the same lookup also recovers the
+// joiner and separator keys from a live event.
 const KEY_NAME_MAP = new Map<string, string>([
   ...KEY_NAMES.map((name) => [name.toLowerCase(), name] as const),
   [" ", "Space"],
@@ -372,18 +370,15 @@ export function getEventLookupKeys(
 ): ShortcutLookupKeys | null {
   const { key, code, keyCode, metaKey, ctrlKey, altKey, shiftKey } = event;
 
-  // 1. Input-method sentinels name no key the user pressed.
   if (key === "Dead" || key === "Unidentified") return null;
-  // 2. Composition in progress, including the legacy keyCode signal.
   if (event.isComposing || keyCode === 229) return null;
-  // 3. AltGr text composition. Unconditional, and never gated on the key
-  // it's composing: matching it would let ordinary international typing run
+  // AltGr text composition. Unconditional, and never gated on the key it's
+  // composing: matching it would let ordinary international typing run
   // shortcuts.
   if (event.getModifierState?.("AltGraph")) return null;
-  // 4. A modifier pressed on its own is not a shortcut.
   if (LONE_MODIFIER_KEYS.has(key)) return null;
 
-  // 5. Trust a Latin `key` verbatim. Fall back to `code` only when `key` is
+  // Trust a Latin `key` verbatim. Fall back to `code` only when `key` is
   // not Latin, which is what lets a Cyrillic or Greek layout still match a
   // Latin binding without normalizing every other layout to QWERTY.
   let base = key;
@@ -393,7 +388,6 @@ export function getEventLookupKeys(
   }
   base = foldKeyCase(base);
 
-  // 6. Named keys, including the joiner and separator characters.
   base = KEY_NAME_MAP.get(base.toLowerCase()) ?? base;
 
   const held: Modifier[] = [];
@@ -402,10 +396,9 @@ export function getEventLookupKeys(
   if (shiftKey) held.push("Shift");
   if (metaKey) held.push("Meta");
 
-  // 7.
   const primary = canonical(held, base);
 
-  // 8. "Shift+?" also reads as "?", but "Shift+A" does not read as "A",
+  // "Shift+?" also reads as "?", but "Shift+A" does not read as "A",
   // because ARIA treats "a" and "A" as the same key.
   let secondary: string | null = null;
   if (shiftKey && base.length === 1 && !LATIN.test(base)) {

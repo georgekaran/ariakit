@@ -49,10 +49,9 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
     const store = storeProp ?? context;
     const commandContext = useContext(ShortcutCommandContext);
 
-    // Decision 40: platform, glyphs and keyNames are store state, precisely
-    // so they compose down the chain. Resolution order everywhere below is
-    // this component's own prop, then the store's state, then (inside
-    // getGlyph/getKeyName) the Ariakit default.
+    // platform, glyphs, and keyNames are store state, so they compose down
+    // the chain: this component's own prop, then the store's state, then
+    // the Ariakit default inside getGlyph and getKeyName.
     const storePlatform = useStoreState(store, "platform");
     const platform = platformProp ?? storePlatform;
     const storeGlyphs = useStoreState(store, "glyphs");
@@ -69,23 +68,16 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
       }),
       [platform, storeKeyNames, keyNames],
     );
-    // The only by-name read in the public API: a `command` prop looks up
-    // whatever ShortcutCommand or useShortcutCommand declared it elsewhere.
     const namedKeys = useShortcutKeys({ command: command ?? "", store });
 
-    // The server can only guess `platform`, so display stays empty until
-    // the guess is confirmed real -- unless this component's own explicit
-    // `platform` prop already settles it. See useShortcutPlatform. Always
-    // called, never short-circuited: a conditional hook call would break
-    // across renders where `platformProp` itself changes.
+    // Always called, never short-circuited by `platformProp`: a
+    // conditional hook call would break across renders where it changes.
+    // See useShortcutPlatform for why display stays gated until settled.
     const platformSettled = useShortcutPlatform(store);
     const settled = platformProp !== undefined || platformSettled;
 
-    // Determine the keys to render, in order -- the `keys` prop,
-    // then the `command` prop, then the closest ShortcutCommand from
-    // context. Only the FIRST alternative that resolves is ever shown (step
-    // 2): an app that wants every alternative maps over useShortcutKeys
-    // itself.
+    // Only the first alternative that resolves is ever shown; an app that
+    // wants every alternative maps over useShortcutKeys itself.
     const resolvedKeys = useMemo(() => {
       if (!settled) return [];
       if (keysProp) return resolveKeys(keysProp, platform).map((r) => r.text);
@@ -97,13 +89,10 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
     const first = resolvedKeys[0];
     const displayKeys = first ? first.split("+") : [];
 
-    // A `command` prop names a command that may live nowhere near this
-    // element -- a tooltip, a cheatsheet, a command palette -- so it gates
-    // on THAT command's own live availability, never the enclosing one.
-    // Only without a `command` prop does gating fall back to the enclosing
-    // ShortcutCommand, when there is one; with neither -- a bare `keys`
-    // prop with no enclosing command -- there is nothing to gate on, so the
-    // hint is always shown, the same as a command with no region.
+    // A `command` prop may name a command that lives elsewhere, so it gates
+    // on that command's own availability, never the enclosing one. With
+    // neither `command` nor an enclosing ShortcutCommand, there is nothing
+    // to gate on, so the hint is always shown.
     const namedAvailability = useShortcutAvailability({
       command: command ?? "",
       store,
@@ -119,13 +108,10 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
         ? commandContext.enabled
         : true;
 
-    // Hidden while the command's region is not focused OR the effective
-    // enabled is false, unless alwaysVisible is set. visibility: hidden,
-    // NOT unmounting and NOT `hidden`: removing the box resizes the row,
-    // and Popover re-runs computePosition on resize, so a hint appearing in
-    // an open popup would move it. Deliberately excludes shadowing, which
-    // is computable but would make a hint vanish because of an unrelated
-    // dialog.
+    // Hidden while the command's region is unfocused or effectively
+    // disabled, unless alwaysVisible is set. Uses visibility: hidden, not
+    // unmounting or the `hidden` attribute: removing the box would resize
+    // the row and move an open popup as Popover re-runs computePosition.
     const hidden = !alwaysVisible && (!inScope || !enabled);
     const style: CSSProperties | undefined = hidden
       ? { visibility: "hidden", ...props.style }
@@ -136,28 +122,23 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
     // as "Save Command S" and then again from the attribute.
     const hideFromName = !!commandContext?.hasAriaKeyShortcuts;
 
-    // "+" in the glyph map is the JOINER rendered between keys -- distinct
-    // from the literal Plus key -- so it has to be read once here and
-    // spliced between elements, the same way formatKeys joins its plain-text
-    // keys with it. Apple's joiner is "", so it is skipped rather than
-    // rendered as an empty node: a chord renders solid there, with nothing
-    // between the keys at all.
+    // "+" in the glyph map is the joiner between keys, distinct from the
+    // literal Plus key, so it's read once and spliced between elements.
+    // Apple's joiner is "", skipped rather than rendered as an empty node.
     const joinerGlyph = getGlyph("+", platform, resolvedGlyphs);
     const children = displayKeys.flatMap((key, index) => {
       const spokenName = getKeyName(key, platform, resolvedKeyNames);
       const keyElement = (
-        // oxlint-disable-next-line react/no-array-index-key -- keys repeat within a shortcut
+        // oxlint-disable-next-line react/no-array-index-key
         <kbd key={key} data-key={key.toLowerCase()}>
           <span aria-hidden>{getGlyph(key, platform, resolvedGlyphs)}</span>
           {spokenName ? <VisuallyHidden>{spokenName}</VisuallyHidden> : null}
         </kbd>
       );
       if (index === 0 || !joinerGlyph) return [keyElement];
-      // Decoration, not a key: no `kbd`, no `data-key`, and aria-hidden like
-      // the glyph spans, so a screen reader does not read "plus" between
-      // every key. Never a `<kbd>` and never carrying `data-key`, so it
-      // cannot be mistaken for the literal Plus key, whose own glyph is a
-      // "+" rendered INSIDE its own `kbd[data-key="plus"]`.
+      // Decoration, not a key: no `kbd` or `data-key`, and aria-hidden
+      // like the glyph spans, so a screen reader doesn't read "plus"
+      // between keys, and it can't be mistaken for the literal Plus key.
       return [
         <span key={`${key}-joiner`} aria-hidden>
           {joinerGlyph}
