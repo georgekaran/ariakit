@@ -1,13 +1,10 @@
+import { formatKeys } from "@ariakit/components/shortcut/glyphs";
 import { focus, q, render } from "@ariakit/test/react";
 import { afterEach, expect, test } from "vitest";
 import { ShortcutCommand } from "./shortcut-command.tsx";
 import { ShortcutProvider } from "./shortcut-provider.tsx";
 import { ShortcutScope } from "./shortcut-scope.tsx";
 import { Shortcut } from "./shortcut.tsx";
-
-/* ---------------------------------------------------------------------- *
- * Task 12 — Shortcut display and useShortcutKeys.
- * ---------------------------------------------------------------------- */
 
 let unmount: (() => void) | undefined;
 
@@ -179,4 +176,160 @@ test("the display matches exactly what aria-keyshortcuts claims", async () => {
     "control",
     "s",
   ]);
+});
+
+test("a by-name display hides when the named command is disabled", async () => {
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutCommand
+        command="save"
+        keys="Control+S"
+        onTrigger={() => {}}
+        enabled={false}
+      >
+        Save
+      </ShortcutCommand>
+      <Shortcut command="save" />
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  expect(outer.style.visibility).toBe("hidden");
+});
+
+test("a by-name display respects the named command's scope", async () => {
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutScope>
+        <ShortcutCommand command="save" keys="Control+S" onTrigger={() => {}}>
+          Save
+        </ShortcutCommand>
+      </ShortcutScope>
+      <Shortcut command="save" />
+      <input aria-label="elsewhere" />
+    </ShortcutProvider>,
+  );
+
+  await focus(q.textbox.ensure("elsewhere"));
+
+  const outer = outerKbd();
+  expect(outer.style.visibility).toBe("hidden");
+});
+
+test("alwaysVisible overrides the by-name gate", async () => {
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutCommand
+        command="save"
+        keys="Control+S"
+        onTrigger={() => {}}
+        enabled={false}
+      >
+        Save
+      </ShortcutCommand>
+      <Shortcut command="save" alwaysVisible />
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  expect(outer.style.visibility).not.toBe("hidden");
+});
+
+/* ---------------------------------------------------------------------- *
+ * Bug 1 -- the "+" joiner between keys.
+ * ---------------------------------------------------------------------- */
+
+test("a non-Apple chord renders the joiner between keys", async () => {
+  await renderTree(
+    <ShortcutProvider platform="windows">
+      <Shortcut keys="Control+Shift+A" />
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  const inner = [...outer.querySelectorAll("kbd[data-key]")];
+  expect(inner.map((el) => el.getAttribute("data-key"))).toEqual([
+    "control",
+    "shift",
+    "a",
+  ]);
+  // Windows has no empty override for "+", so the joiner renders between
+  // every pair of keys, matching formatKeys exactly.
+  expect(outer.textContent).toBe("Control+Shift+A");
+  expect(outer.textContent).toBe(
+    formatKeys("Control+Shift+A", { platform: "windows" }),
+  );
+});
+
+test("an Apple chord renders no joiner", async () => {
+  const first = await renderTree(
+    <ShortcutProvider platform="apple">
+      <Shortcut keys="mod+S" />
+    </ShortcutProvider>,
+  );
+
+  // Apple's "+" glyph is "", so the chord renders solid -- no element at all
+  // between the keys, not even an empty one: two keys, two children.
+  const outerFirst = outerKbd();
+  expect(outerFirst.children.length).toBe(2);
+  expect(outerFirst.textContent).toBe("⌘S");
+  expect(outerFirst.textContent).toBe(
+    formatKeys("mod+S", { platform: "apple" }),
+  );
+  first.unmount();
+
+  await renderTree(
+    <ShortcutProvider platform="apple">
+      <Shortcut keys="mod+shift+A" />
+    </ShortcutProvider>,
+  );
+
+  // Three keys, three children: Shift's own visually hidden spoken name
+  // ("Shift", needed because NVDA has no symbols.dic entry for ⇧) lives
+  // inside ITS kbd, not as a fourth, separate joiner node.
+  const outerSecond = outerKbd();
+  expect(outerSecond.children.length).toBe(3);
+  expect(outerSecond.textContent).toBe("⇧Shift⌘A");
+});
+
+test("the literal Plus key stays distinguishable from the joiner", async () => {
+  await renderTree(
+    <ShortcutProvider platform="windows">
+      <Shortcut keys="Control+Plus" />
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  const inner = [...outer.querySelectorAll("kbd[data-key]")];
+  expect(inner.map((el) => el.getAttribute("data-key"))).toEqual([
+    "control",
+    "plus",
+  ]);
+  // The literal Plus key renders its "+" inside its own kbd[data-key="plus"].
+  // The joiner between the two keys is a separate node: not a kbd, and
+  // carrying no data-key, so the two adjacent "+" characters stay
+  // structurally unambiguous even though they look identical.
+  const plusKbd = outer.querySelector('kbd[data-key="plus"]');
+  expect(plusKbd?.textContent).toBe("+");
+  expect(outer.children.length).toBe(3);
+  const joiner = outer.children[1];
+  expect(joiner?.tagName).not.toBe("KBD");
+  expect(joiner?.hasAttribute("data-key")).toBe(false);
+  expect(joiner?.getAttribute("aria-hidden")).toBe("true");
+  expect(outer.textContent).toBe("Control++");
+  expect(outer.textContent).toBe(
+    formatKeys("Control+Plus", { platform: "windows" }),
+  );
+});
+
+test("a single-key shortcut renders no joiner", async () => {
+  await renderTree(
+    <ShortcutProvider platform="windows">
+      <Shortcut keys="Escape" />
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  expect(outer.children.length).toBe(1);
+  expect(outer.textContent).toBe("Escape");
 });

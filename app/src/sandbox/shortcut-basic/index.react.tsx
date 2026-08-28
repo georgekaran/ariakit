@@ -8,7 +8,7 @@ import {
 } from "@ariakit/react";
 import { useState } from "react";
 
-// A ShortcutProvider's `glyphs` is store state (decision 40), so it composes
+// A ShortcutProvider's `glyphs` is store state, so it composes
 // down to every nested Shortcut -- "plain" below carries no glyphs prop of
 // its own and still renders this. A Shortcut's own `glyphs` prop still
 // overrides the store for THIS instance: multi-first, multi-all and
@@ -41,7 +41,7 @@ function SaveStatus() {
   const [saves, setSaves] = useState(0);
   // The handler is declared exactly once, by name. The ShortcutCommand
   // below carries the same `command` and nothing else -- no keys, no
-  // onTrigger -- so it is a pure reference (A4): clicking it runs the
+  // onTrigger -- so it is a pure reference: clicking it runs the
   // declaration's handler through store.runOnTrigger, never its own local
   // code (there is none). "Declare once, reference anywhere."
   useShortcutCommand({
@@ -57,7 +57,7 @@ function SaveStatus() {
   );
 }
 
-// Demonstrates A9 step 2 (only the first alternative that resolves is ever
+// Demonstrates (only the first alternative that resolves is ever
 // shown) and the documented escape hatch: an app that wants every
 // alternative maps over useShortcutKeys itself.
 function MultiAlternatives() {
@@ -79,7 +79,7 @@ function MultiAlternatives() {
   );
 }
 
-// Demonstrates the visibility gate (A9 step 6): hidden with
+// Demonstrates the visibility gate: hidden with
 // visibility: hidden, never unmounted, while the enclosing command is
 // disabled, unless alwaysVisible is set.
 function AlwaysVisibleDemo() {

@@ -39,7 +39,7 @@ function getGlobalReactStore(): ShortcutStore {
  * other context hook in the library, this NEVER returns `undefined`: without a
  * provider it falls back to a shared global store, which is what makes global
  * shortcuts work with no setup at all.
- * @see decision 42
+ *
  * @example
  * function Command() {
  *   const store = useShortcutContext();

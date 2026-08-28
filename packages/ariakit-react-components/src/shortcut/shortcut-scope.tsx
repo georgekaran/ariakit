@@ -52,20 +52,26 @@ export const useShortcutScope = createHook<TagName, ShortcutScopeOptions>(
     // that initializer and discards one result, which would leak a
     // registration with no way to ever unregister it.
     //
-    // A descendant scope links into `ownHandle.children` (via this very
-    // effect, passing `ownHandle` as ITS OWN parent) the moment ITS layout
-    // effect runs -- and layout effects run child-first, so that already
-    // happens before this one does. The store's own registration always
-    // gets a fresh, empty children set; pointing it at `ownHandle.children`
-    // instead makes the two agree regardless of registration order, and
-    // keeps agreeing if a nested scope mounts later still.
+    // A descendant scope links into `ownHandle.children` (via ITS OWN copy
+    // of this same effect, passing `ownHandle` as ITS parent) the moment
+    // ITS layout effect runs -- and layout effects run child-first, so
+    // that already happens before this one does, regardless of when (or
+    // whether) the store below finishes registering this level.
+    //
+    // store.registerScope gets only an element and the parent's element
+    // identity -- never `ownHandle` itself -- and resolves descendants on
+    // its own side by matching that identity, so nothing here reaches into
+    // whatever record the store keeps for the registration.
     useSafeLayoutEffect(() => {
-      const registered = store.registerScope({
+      parent?.children.add(ownHandle);
+      const unregister = store.registerScope({
         element: ownHandle.element,
-        parent,
+        parent: parent?.element,
       });
-      Object.assign(registered, { children: ownHandle.children });
-      return registered.unregister;
+      return () => {
+        unregister();
+        parent?.children.delete(ownHandle);
+      };
     }, [store, parent, ownHandle]);
 
     props = useWrapElement(

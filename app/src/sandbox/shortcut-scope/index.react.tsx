@@ -16,7 +16,7 @@ function focusTestId(id: string) {
   document.querySelector<HTMLElement>(`[data-testid="${id}"]`)?.focus();
 }
 
-// A6: "its own elements plus the elements of every scope registered under it
+// "its own elements plus the elements of every scope registered under it
 // through React context". Region A's scoped command inherits this
 // ShortcutScope (scope left undefined on the command), and so does the
 // nested ShortcutScope inside the popover below -- REGARDLESS of where the
@@ -33,7 +33,7 @@ function RegionA() {
         data-testid="scoped-a-command"
       >
         Scoped A
-        {/* A9 step 6: hidden with visibility: hidden while region A does not
+        {/* hidden with visibility: hidden while region A does not
             contain focus, never unmounted and never `hidden` -- unmounting
             would resize the row and move an open Popover positioned near
             it. */}
@@ -50,7 +50,7 @@ function RegionA() {
         <Popover portal>
           {/* The single most important element in this fixture: a nested
               ShortcutScope links into region A's region through REACT
-              CONTEXT (A6), regardless of where the portal places this node
+              CONTEXT, regardless of where the portal places this node
               in the DOM. Plain Node.contains would say the input below is
               NOT in region A, since it is not a descendant of region A's
               own <div> at all once portalled. */}
@@ -67,7 +67,7 @@ function RegionA() {
 }
 
 // A SECOND, sibling ShortcutScope with its own command on the same keys as
-// region A's. Its region does not overlap region A's, so A7 step 5 drops it
+// region A's. Its region does not overlap region A's, so the ranking drops it
 // as a candidate whenever the origin is inside region A, and vice versa --
 // no ranking is even needed to keep the two apart.
 function RegionB() {
@@ -87,7 +87,7 @@ function RegionB() {
   );
 }
 
-// A plain <div>, NOT a ShortcutScope, used as a `scope` ref target. A6: an
+// A plain <div>, NOT a ShortcutScope, used as a `scope` ref target: an
 // element that was not rendered by ShortcutScope is tested by plain
 // containment and gains no portalled descendants -- there is no registered
 // ScopeRecord for `ref.current` to look up, only the element itself.
@@ -155,11 +155,11 @@ function DropFocusButton() {
   );
 }
 
-// A7 step 5: a bare printable key defaults to `enabledInTextbox: false`, so
+// a bare printable key defaults to `enabledInTextbox: false`, so
 // ordinary typing is left alone -- protectedDemo proves that, and that the
 // same key fires normally once focus leaves the input. `enabledInTextbox:
 // true` overrides that default -- captureDemo proves the dispatcher's
-// CAPTURE phase (A7) claims the key and calls preventDefault() before the
+// CAPTURE phase claims the key and calls preventDefault() before the
 // browser's own default action would insert the character, so the input
 // stays empty. Happy-dom cannot prove either half: it does not simulate
 // real typing from a raw keydown, so this pairing only means something in a
@@ -187,7 +187,7 @@ function TextboxDemo() {
   );
 }
 
-// A7 step 6: a scoped command always outranks an unscoped one, because
+// a scoped command always outranks an unscoped one, because
 // scope depth is compared before store depth or registration order. So
 // dialogEscape claims Escape over globalEscape whatever order the two
 // happen to register in -- the ranking does not care which one is newer.
@@ -238,7 +238,7 @@ function EscapeDemo() {
   );
 }
 
-// A8 and the modifier note on fireShortcutClickEvent: the synthetic click
+// Per the modifier note on fireShortcutClickEvent: the synthetic click
 // the keyboard path fires carries no modifiers, so a link-rendered
 // reference navigates instead of doing whatever Control/Cmd+Click means to
 // the browser (opening a background tab). Unnamed, so this registration is

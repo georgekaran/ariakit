@@ -34,11 +34,16 @@ import {
   useShortcutContext,
 } from "./shortcut-context.tsx";
 import type { ShortcutStore } from "./shortcut-store.ts";
-import { useShortcutKeys } from "./shortcut-store.ts";
+import { useShortcutKeys, useShortcutPlatform } from "./shortcut-store.ts";
 
 const TagName = "button" satisfies ElementType;
 type TagName = typeof TagName;
 type HTMLType = HTMLElementTagNameMap[TagName];
+
+// A stable reference, not `[]` inline: commandContextValue's own useMemo
+// depends on resolvedKeys, so a fresh array on every unsettled render would
+// defeat it.
+const NO_KEYS: string[] = [];
 
 function resolveScopeElement(
   element: Element | (() => Element | null) | undefined,
@@ -47,10 +52,18 @@ function resolveScopeElement(
   return typeof element === "function" ? element() : element;
 }
 
+// runOnTrigger is not part of ShortcutStore's public type -- it is the
+// click bridge's own entry point, not a published capability -- but every
+// store this package builds still carries it at runtime. This is the one
+// place that needs it back.
+interface StoreWithRunOnTrigger {
+  runOnTrigger: (command: string, event: ShortcutEvent) => boolean;
+}
+
 /**
  * Whether the given scope handle's region -- its own element, plus the
  * elements of every child scope registered under it -- currently contains
- * focus (A6). Not `Node.contains`: a portalled child's element need not be a
+ * focus. Not `Node.contains`: a portalled child's element need not be a
  * DOM descendant of its parent's.
  */
 function isScopeHandleFocused(handle: ShortcutScopeHandle): boolean {
@@ -62,7 +75,7 @@ function isScopeHandleFocused(handle: ShortcutScopeHandle): boolean {
   return false;
 }
 
-/** An explicit scope ref is tested by plain containment (A6). */
+/** An explicit scope ref is tested by plain containment. */
 function isRefFocused(ref: ShortcutScopeRef): boolean {
   const element = "current" in ref ? ref.current : ref;
   if (!element) return false;
@@ -72,7 +85,7 @@ function isRefFocused(ref: ShortcutScopeRef): boolean {
 /**
  * Resolves a command's `scope` option into whether its region currently
  * contains focus. A command with no region at all -- `null`, or `undefined`
- * with no enclosing `ShortcutScope` -- is always in scope (A9 step 6).
+ * with no enclosing `ShortcutScope` -- is always in scope.
  */
 function isInScope(
   scope: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
@@ -90,7 +103,7 @@ function isInScope(
 /**
  * Resolves the `scope` option a command registers with: an explicit `scope`
  * prop wins, `null` opts out, and `undefined` inherits the closest
- * `ShortcutScope` from React context (A6).
+ * `ShortcutScope` from React context.
  */
 function resolveCommandScope(
   scope: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
@@ -228,6 +241,9 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     // platform shortcut property on TWO spaces, while ARIA specifies one, so
     // a multi-shortcut value is mis-spoken.
     const platform = useStoreState(store, "platform");
+    // The server can only guess `platform`, so a keys-bearing command stays
+    // silent until that guess is confirmed real -- see useShortcutPlatform.
+    const settled = useShortcutPlatform(store);
     const namedKeys = useShortcutKeys({ command: command ?? "", store });
     // An unnamed command has no override to apply -- there is no name to key
     // one by -- so its declared `keys` is resolved directly.
@@ -235,7 +251,11 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
       () => (keys ? resolveKeys(keys, platform).map((r) => r.text) : []),
       [keys, platform],
     );
-    const resolvedKeys = command ? namedKeys : declaredKeys;
+    const resolvedKeys = settled
+      ? command
+        ? namedKeys
+        : declaredKeys
+      : NO_KEYS;
     const first = resolvedKeys[0];
     // Present exactly when the command's effective enabled is true.
     // Independent of scope: out-of-scope is not disabled.
@@ -263,14 +283,14 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     );
 
     // A click on a ShortcutCommand element runs the command the keyboard
-    // would have run, in the other direction (A8):
+    // would have run, in the other direction:
     // 1. A click the dispatcher itself fired (or that this same bridge
     //    already fired) is never re-bridged.
     // 2 and 3. A genuine click runs the command's onTrigger, by name, from
     //    the MERGED declaration -- a registration supplying only `command`,
     //    like this one when there's no onTrigger prop, is a reference, and
     //    store.runOnTrigger() bridges it to whichever registration under
-    //    that name declared the handler (A4, decision 3's "declare once,
+    //    that name declared the handler ("declare once,
     //    reference anywhere"). An unnamed command has nothing to merge, so
     //    it runs its own local onTrigger directly instead.
     // 4. No element is ever activated here: the click already happened, so
@@ -292,7 +312,10 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
         originalEvent: event.nativeEvent,
       };
       if (command) {
-        store.runOnTrigger(command, shortcutEvent);
+        (store as ShortcutStore & StoreWithRunOnTrigger).runOnTrigger(
+          command,
+          shortcutEvent,
+        );
         return;
       }
       if (!hasTrigger) return;

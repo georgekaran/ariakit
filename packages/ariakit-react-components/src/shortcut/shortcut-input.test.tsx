@@ -5,10 +5,6 @@ import { ShortcutCommand } from "./shortcut-command.tsx";
 import { ShortcutInput } from "./shortcut-input.tsx";
 import { ShortcutProvider } from "./shortcut-provider.tsx";
 
-/* ---------------------------------------------------------------------- *
- * Task 13 — ShortcutInput.
- * ---------------------------------------------------------------------- */
-
 let unmount: (() => void) | undefined;
 
 afterEach(() => {
@@ -34,9 +30,8 @@ function ariaKeyShortcuts(element: HTMLElement) {
   return element.getAttribute("aria-keyshortcuts");
 }
 
-// A commit -- a chord or a clear -- already ends recording on its own (see
-// shortcut-input.tsx). focus() is a no-op on an already-focused element, so
-// restarting a session needs an explicit blur first.
+// focus() is a no-op on an already-focused element, so restarting a
+// recording session needs an explicit blur first.
 async function restartRecording() {
   await blur(input());
   await focus(input());
@@ -65,8 +60,7 @@ test("the committed value is canonical text, not glyphs", async () => {
 
   await focus(input());
   await press("s", input(), { metaKey: true, shiftKey: true });
-  // Canonical modifier order is Control, Alt, Shift, Meta -- not the order
-  // the keys were held.
+  // Canonical modifier order is Control, Alt, Shift, Meta -- not press order.
   expect(setKeys).toHaveBeenCalledWith("Shift+Meta+S");
 });
 
@@ -97,9 +91,8 @@ test('"a", "b", "c" records only "C", never a set that never resets', async () =
   await restartRecording();
   await press("c", input());
 
-  // Each keydown re-derives the chord from scratch instead of accumulating
-  // into a set -- the defect in useRecordHotkeys, which never resets what it
-  // accumulates and so cannot tell a chord from a sequence.
+  // Each keydown re-derives the chord from scratch; useRecordHotkeys never
+  // resets what it accumulates (see shortcut-input.tsx).
   expect(setKeys.mock.calls).toEqual([["A"], ["B"], ["C"]]);
 });
 
@@ -170,9 +163,8 @@ test("while recording, no other command on the page fires", async () => {
   );
 
   await focus(input());
-  // Control+B matches the Bold command above. data-shortcut-recording is
-  // the only thing that can stop it, since the document dispatcher runs in
-  // the capture phase, ahead of this input's own handler.
+  // The document dispatcher runs in the capture phase, ahead of the input's
+  // own handler, so data-shortcut-recording is the only thing that stops it.
   await press("b", input(), { ctrlKey: true });
 
   expect(onTrigger).not.toHaveBeenCalled();

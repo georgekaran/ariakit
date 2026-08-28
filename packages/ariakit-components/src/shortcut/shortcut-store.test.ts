@@ -20,9 +20,23 @@ function track<T extends () => void>(unregister: T): T {
   return unregister;
 }
 
-/* ---------------------------------------------------------------------- *
- * Task 4 — store skeleton: state, nesting, effective `enabled`.
- * ---------------------------------------------------------------------- */
+// happy-dom's KeyboardEvent.getModifierState conflates "Alt" and "AltGraph",
+// always answering both from the live `altKey` flag. A real browser does
+// not: the dispatcher's AltGr-composition guard (getEventLookupKeys) relies
+// on telling a plain Alt/Option press apart from AltGr composing a
+// character. Patch just this event so it reports what a real browser would.
+function dispatchAltKeydown(target: Element, key: string) {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    altKey: true,
+    bubbles: true,
+    composed: true,
+    cancelable: true,
+  });
+  event.getModifierState = (name: string) => name === "Alt";
+  target.dispatchEvent(event);
+  return event;
+}
 
 test("a nested level does not clobber its parent's registry", () => {
   const root = createShortcutStore();
@@ -70,10 +84,6 @@ test("display config inherits, but an explicit prop pins it", () => {
   expect(pinned.getState().platform).toBe("windows");
 });
 
-/* ---------------------------------------------------------------------- *
- * Task 5 — registration, indexing, and per-field merging.
- * ---------------------------------------------------------------------- */
-
 test("a declaration and a reference merge instead of clobbering", () => {
   const store = createShortcutStore();
   const ran: string[] = [];
@@ -113,6 +123,52 @@ test("several references under one name all survive", () => {
   expect(store.getKeys("save")).toEqual(["Control+S"]);
 });
 
+test("a disabled reference does not disable the whole named command", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  const button = document.createElement("button");
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => ran.push("handler"),
+    }),
+  );
+  track(
+    store.registerCommand({
+      command: "save",
+      element: button,
+      enabled: false,
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true }),
+  );
+  // The disabled reference must stop only itself, not the declaration: the
+  // keyboard still runs the handler through the reference that IS live.
+  expect(ran).toEqual(["handler"]);
+});
+
+test("several references under one name emit no duplicate-declaration warning", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const store = createShortcutStore();
+  const a = document.createElement("button");
+  const b = document.createElement("button");
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => {},
+    }),
+  );
+  track(store.registerCommand({ command: "save", element: a, enabled: true }));
+  track(store.registerCommand({ command: "save", element: b, enabled: false }));
+  // `enabled` is per-registration, not a merged declaration field: several
+  // references each supplying their own value must never warn.
+  expect(warn).not.toHaveBeenCalled();
+  warn.mockRestore();
+});
+
 test("unregistering removes exactly one registration", () => {
   const store = createShortcutStore();
   const un = store.registerCommand({ command: "save", keys: "Control+S" });
@@ -139,10 +195,6 @@ test("an unnamed command runs but has no name-based features", () => {
   expect(store.trigger("save")).toBe(false);
 });
 
-/* ---------------------------------------------------------------------- *
- * Task 6 — scopes and region resolution.
- * ---------------------------------------------------------------------- */
-
 test("a portalled child scope is inside its parent's region", () => {
   const store = createShortcutStore();
   const outer = document.createElement("div");
@@ -152,10 +204,10 @@ test("a portalled child scope is inside its parent's region", () => {
   popup.append(input);
   document.body.append(outer, popup);
 
-  const parentScope = store.registerScope({ element: outer });
-  const childScope = store.registerScope({
+  const unregisterParent = store.registerScope({ element: outer });
+  const unregisterChild = store.registerScope({
     element: popup,
-    parent: parentScope,
+    parent: outer,
   });
 
   const ran: string[] = [];
@@ -178,8 +230,8 @@ test("a portalled child scope is inside its parent's region", () => {
   // Containment would have failed here. The scope tree succeeds.
   expect(ran).toEqual(["scoped"]);
 
-  childScope.unregister();
-  parentScope.unregister();
+  unregisterChild();
+  unregisterParent();
   outer.remove();
   popup.remove();
 });
@@ -264,10 +316,6 @@ test("a scope inside a shadow root is reachable from within it", () => {
   expect(ran).toEqual(["scoped"]);
   host.remove();
 });
-
-/* ---------------------------------------------------------------------- *
- * Task 7 — the dispatch pipeline.
- * ---------------------------------------------------------------------- */
 
 test("the listener runs in the capture phase", () => {
   const store = createShortcutStore();
@@ -548,6 +596,39 @@ test("a chord fires while typing by default", () => {
   input.remove();
 });
 
+test("Option+letter does not fire inside a text field on Apple", () => {
+  const store = createShortcutStore({ platform: "apple" });
+  const input = document.createElement("input");
+  document.body.append(input);
+  const ran: string[] = [];
+  track(
+    store.registerCommand({ keys: "Alt+L", onTrigger: () => ran.push("x") }),
+  );
+  const event = dispatchAltKeydown(input, "l");
+  // Option is a character layer on Apple, not a command modifier: this must
+  // read as ordinary typing, so the command must not fire and must not
+  // swallow the character the user was typing.
+  expect(ran).toEqual([]);
+  expect(event.defaultPrevented).toBe(false);
+  input.remove();
+});
+
+test("Alt+letter fires inside a text field on Windows", () => {
+  const store = createShortcutStore({ platform: "windows" });
+  const input = document.createElement("input");
+  document.body.append(input);
+  const ran: string[] = [];
+  track(
+    store.registerCommand({ keys: "Alt+L", onTrigger: () => ran.push("x") }),
+  );
+  const event = dispatchAltKeydown(input, "l");
+  // Alt IS a command modifier on Windows: the chord still fires while
+  // typing, same as any other chord.
+  expect(ran).toEqual(["x"]);
+  expect(event.defaultPrevented).toBe(true);
+  input.remove();
+});
+
 test("the second lookup key runs when the first matches nothing", () => {
   const store = createShortcutStore();
   const ran: string[] = [];
@@ -604,10 +685,6 @@ test("preventDefault can be opted out per command", () => {
   document.body.dispatchEvent(event);
   expect(event.defaultPrevented).toBe(false);
 });
-
-/* ---------------------------------------------------------------------- *
- * Task 8 — trigger, getKeys, setKeys, attach.
- * ---------------------------------------------------------------------- */
 
 test("an override beats a declaration whatever the mount order", () => {
   const store = createShortcutStore();
@@ -673,6 +750,45 @@ test("trigger ignores scope but respects enabled", () => {
   expect(ran).toEqual(["x"]);
   store.setEnabled(true);
   region.remove();
+});
+
+test("trigger respects the declaration's own enabled", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      enabled: false,
+      onTrigger: () => ran.push("handler"),
+    }),
+  );
+  // The declaration itself is disabled, so trigger() must not run it.
+  expect(store.trigger("save")).toBe(false);
+  expect(ran).toEqual([]);
+});
+
+test("trigger is not disabled by an unrelated disabled reference", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  const button = document.createElement("button");
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => ran.push("handler"),
+    }),
+  );
+  track(
+    store.registerCommand({
+      command: "save",
+      element: button,
+      enabled: false,
+    }),
+  );
+  // The declaration is enabled; a disabled reference must not gate trigger().
+  expect(store.trigger("save")).toBe(true);
+  expect(ran).toEqual(["handler"]);
 });
 
 test("the programmatic event has no original event", () => {
@@ -831,4 +947,123 @@ test("runOnTrigger returns false when the handler declines", () => {
     originalEvent: new MouseEvent("click"),
   };
   expect(store.runOnTrigger("save", event)).toBe(false);
+});
+
+/* ---------------------------------------------------------------------- *
+ * registerScope's public shape -- an unregister function, matching
+ * registerCommand, not a handle into the scope tree's internals.
+ * ---------------------------------------------------------------------- */
+
+test("registerScope returns a plain unregister function", () => {
+  const store = createShortcutStore();
+  const element = document.createElement("div");
+  const unregister = store.registerScope({ element });
+  expect(typeof unregister).toBe("function");
+  unregister();
+});
+
+/* ---------------------------------------------------------------------- *
+ * getAvailability -- a side-effect-free, by-name read of whether a command
+ * is currently enabled and in scope.
+ * ---------------------------------------------------------------------- */
+
+test("getAvailability's enabled is the store chain's enabled ANDed with the declaration's own", () => {
+  const store = createShortcutStore();
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => {},
+    }),
+  );
+  expect(store.getAvailability("save")).toEqual({
+    enabled: true,
+    inScope: true,
+  });
+  store.setEnabled(false);
+  expect(store.getAvailability("save").enabled).toBe(false);
+  store.setEnabled(true);
+  expect(store.getAvailability("save").enabled).toBe(true);
+});
+
+test("getAvailability's enabled follows the declaring registration's own enabled, not a reference's", () => {
+  const store = createShortcutStore();
+  const button = document.createElement("button");
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => {},
+      enabled: false,
+    }),
+  );
+  track(store.registerCommand({ command: "save", element: button }));
+  // The declaration itself is disabled; the live reference does not
+  // override that for a by-name read.
+  expect(store.getAvailability("save").enabled).toBe(false);
+});
+
+test("getAvailability is false for a command with no live declaration", () => {
+  const store = createShortcutStore();
+  expect(store.getAvailability("missing")).toEqual({
+    enabled: false,
+    inScope: true,
+  });
+});
+
+test("getAvailability's inScope is true when the command declares no scope", () => {
+  const store = createShortcutStore();
+  track(store.registerCommand({ command: "save", keys: "Control+S" }));
+  expect(store.getAvailability("save").inScope).toBe(true);
+});
+
+test("getAvailability's inScope reflects live focus containment for a declared scope", () => {
+  const store = createShortcutStore();
+  const region = document.createElement("div");
+  const input = document.createElement("input");
+  region.append(input);
+  document.body.append(region);
+  track(
+    store.registerCommand({
+      command: "palette",
+      keys: "Control+K",
+      scope: region,
+      onTrigger: () => {},
+    }),
+  );
+  expect(store.getAvailability("palette").inScope).toBe(false);
+  input.focus();
+  expect(store.getAvailability("palette").inScope).toBe(true);
+  input.blur();
+  region.remove();
+});
+
+test("getAvailability's inScope is scope-tree-aware, matching dispatch for a portalled region", () => {
+  const store = createShortcutStore();
+  const outer = document.createElement("div");
+  const popup = document.createElement("div");
+  const input = document.createElement("input");
+  popup.append(input);
+  document.body.append(outer, popup);
+  const unregisterParent = store.registerScope({ element: outer });
+  const unregisterChild = store.registerScope({
+    element: popup,
+    parent: outer,
+  });
+  track(
+    store.registerCommand({
+      command: "scoped",
+      keys: "Control+K",
+      scope: outer,
+      onTrigger: () => {},
+    }),
+  );
+  input.focus();
+  // Plain DOM containment would fail here, the same as dispatch itself.
+  expect(store.getAvailability("scoped").inScope).toBe(true);
+  input.blur();
+  unregisterChild();
+  unregisterParent();
+  outer.remove();
+  popup.remove();
 });

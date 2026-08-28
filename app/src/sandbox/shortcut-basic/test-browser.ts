@@ -24,7 +24,6 @@ withFramework(import.meta.dirname, async ({ test }) => {
     await test
       .expect(page.locator("output", { hasText: "grouped clicks" }))
       .toHaveText("grouped clicks: 0");
-    // The shortcut is unavailable, so it must not be advertised either.
     await test
       .expect(q.button("Grouped"))
       .not.toHaveAttribute("aria-keyshortcuts");
@@ -45,10 +44,9 @@ withFramework(import.meta.dirname, async ({ test }) => {
   test("a dead key does not run an Alt shortcut", async ({ page, q }) => {
     const count = page.locator("output", { hasText: "accent count" });
     await q.button("anchor").focus();
-    // Option+E on macOS reports key "Dead" while `code` still names the
-    // physical letter. Recovering the letter from the code would run the
-    // command and cancel the accent the user was composing. Playwright cannot
-    // reproduce the platform sequence, so the event is built directly.
+    // macOS reports key "Dead" for Option+E while `code` names the physical
+    // letter; recovering it would cancel the composing accent. Playwright
+    // cannot reproduce this, so the event is built directly.
     const prevented = await page.evaluate(() => {
       const event = new KeyboardEvent("keydown", {
         key: "Dead",
@@ -62,7 +60,6 @@ withFramework(import.meta.dirname, async ({ test }) => {
     });
     test.expect(prevented).toBe(false);
     await test.expect(count).toHaveText("accent count: 0");
-    // The same physical key without the dead-key state still dispatches.
     await page.keyboard.press("Alt+e");
     await test.expect(count).toHaveText("accent count: 1");
   });

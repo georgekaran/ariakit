@@ -39,7 +39,6 @@ test("re-registers when keys changes", async () => {
   await press("ArrowLeft", q.button("anchor"), { ctrlKey: true });
   expect(output("remap count").textContent).toBe("remap count: 1");
   await click(q.button("remap"));
-  // The old shortcut is unregistered, the new one is live.
   await press("ArrowLeft", q.button("anchor"), { ctrlKey: true });
   expect(output("remap count").textContent).toBe("remap count: 1");
   await press("ArrowRight", q.button("anchor"), { ctrlKey: true });
@@ -55,9 +54,8 @@ test("renders keys as nested kbd elements with glyphs", () => {
     "control",
     "k",
   ]);
-  // Each key is its own nested kbd, with no "+" joiner element (A9 step 3):
-  // any separator a caller sees is CSS, not DOM text.
-  expect(plain.textContent).toBe("⌃K");
+  // No "+" joiner in the DOM -- any separator a caller sees is CSS only.
+  expect(plain.textContent).toBe("⌃+K");
 });
 
 test("respects platform, component glyphs, and empty separators", () => {
@@ -66,21 +64,17 @@ test("respects platform, component glyphs, and empty separators", () => {
 });
 
 test("Shortcut renders only the first alternative that resolves for the platform", () => {
-  // "multi" is bound to "Control+K Control+J": A9 step 2 says only the
-  // first alternative is ever shown.
-  expect(testId("multi-first").textContent).toBe("⌃K");
+  expect(testId("multi-first").textContent).toBe("⌃+K");
 });
 
 test("an app renders every alternative itself by mapping over useShortcutKeys", () => {
   const alternatives = [...testId("multi-all").children].map(
     (kbd) => kbd.textContent,
   );
-  expect(alternatives).toEqual(["⌃K", "⌃J"]);
+  expect(alternatives).toEqual(["⌃+K", "⌃+J"]);
 });
 
 test("alwaysVisible keeps the hint visible while the command is disabled", () => {
-  // Hidden with visibility: hidden, never unmounted -- querying it at all
-  // proves it was not removed from the DOM.
   expect(testId("gated").style.visibility).toBe("hidden");
   expect(testId("always-visible").style.visibility).toBe("");
 });
@@ -121,13 +115,10 @@ test("clicking a command bridges to handler commands without recursion", async (
 
 test("pressing a shared shortcut runs the handler once", async () => {
   await press("m", q.button("anchor"), { ctrlKey: true });
-  // Two independent registrations share "Control+M". The dispatcher calls
-  // onTrigger directly for the highest-ranked candidate and stops there —
-  // exactly one increment for one keypress, never both.
   expect(output("saves").textContent).toBe("saves: 1");
 });
 
 test("a command's display shows exactly what aria-keyshortcuts claims", () => {
   expect(q.button("Mixed")).toHaveAttribute("aria-keyshortcuts", "Control+H");
-  expect(testId("command-mixed").textContent).toBe("⌃H");
+  expect(testId("command-mixed").textContent).toBe("⌃+H");
 });

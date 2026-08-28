@@ -39,17 +39,21 @@ function resolveBooleanOrCallback<T>(
   return typeof value === "function" ? value(event) : value;
 }
 
-// A bare printable key is a single-character key with no Control, Alt or Meta
-// held. Shift alone does not disqualify it: Shift+A is still ordinary typing.
-function isBarePrintableKey(event: KeyboardEvent) {
+// A bare printable key is a single-character key with no Control or Meta
+// held, and -- except on Apple, where Option is a character layer, not a
+// command modifier (Option+L types "¬", Option+G types "©") -- no Alt
+// either. Shift alone does not disqualify it: Shift+A is still ordinary
+// typing. This only changes the default for `enabledInTextbox`: a binding
+// of `Alt+L` can still be declared and still matches on every platform.
+function isBarePrintableKey(event: KeyboardEvent, platform: ShortcutPlatform) {
+  const altIsCommandModifier = platform !== "apple";
   return (
-    event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey
+    event.key.length === 1 &&
+    !event.ctrlKey &&
+    (!altIsCommandModifier || !event.altKey) &&
+    !event.metaKey
   );
 }
-
-/* -------------------------------------------------------------------------
- * Task 7 — the shortcut event union.
- * ---------------------------------------------------------------------- */
 
 export interface ShortcutEventProps {
   /** The command name this event was dispatched for, if any. */
@@ -89,10 +93,6 @@ export type ShortcutEvent =
   | ShortcutClickEvent
   | ShortcutProgrammaticEvent;
 
-/* -------------------------------------------------------------------------
- * Task 5 — registration.
- * ---------------------------------------------------------------------- */
-
 /** An element, a ref to one, or a union of several. */
 export type ShortcutScopeRef = Element | { current: Element | null };
 
@@ -123,7 +123,9 @@ export interface ShortcutCommandOptions {
   /** The focus regions this command belongs to. */
   scope?: ShortcutScopeRef | ShortcutScopeRef[] | null;
   /**
-   * Whether the command participates in dispatch at all.
+   * Whether THIS REGISTRATION participates in dispatch. Independent per
+   * registration, not merged: a disabled reference stops only itself, never
+   * the declaration or any other reference sharing the same command name.
    * @default true
    */
   enabled?: boolean;
@@ -160,34 +162,42 @@ interface MergedCommand {
   onTrigger?: (event: ShortcutEvent) => unknown;
   preventDefault?: BooleanOrCallback<ShortcutEvent>;
   scope?: ShortcutScopeRef | ShortcutScopeRef[] | null;
+  /**
+   * NOT a merge of every registration's `enabled`: it is the `enabled` of
+   * whichever registration owns `onTrigger` above (`true` when none does),
+   * for `trigger()`/`runOnTrigger()`. Dispatch never reads this field; it
+   * checks each candidate registration's own `enabled` directly.
+   */
   enabled: boolean;
   enabledInTextbox?: BooleanOrCallback<ShortcutEvent>;
   /** Reference elements, in registration order. */
   elements: Array<{ id: number; get: () => Element | null }>;
 }
 
-/* -------------------------------------------------------------------------
- * Task 6 — scopes.
- * ---------------------------------------------------------------------- */
-
 export interface ShortcutScopeOptions {
   store?: ShortcutStore;
 }
 
-/** An opaque handle to a registered scope. Pass it as another scope's `parent`. */
+/**
+ * @internal Kept here only because `@ariakit/react-components`'s
+ * ShortcutScopeContext, which is not part of this change, still names this
+ * type for its own React-only bookkeeping. Not the shape `registerScope`
+ * takes or returns any more.
+ */
 export interface ShortcutScopeHandle {
   readonly element: Element | (() => Element | null);
   readonly children: Set<ShortcutScopeHandle>;
 }
 
-interface ScopeRecord extends ShortcutScopeHandle {
-  parent?: ScopeRecord;
-  children: Set<ScopeRecord>;
+// No live parent/child object graph: a scope is linked to its parent by
+// the PARENT'S ELEMENT VALUE, resolved lazily wherever it's looked up.
+// Layout effects run child-first, so at registration time a child's parent
+// scope has usually not registered itself yet -- identity matching (below,
+// in regionDepth) needs no registration order at all.
+interface ScopeRecord {
+  element: Element | (() => Element | null);
+  parent?: Element | (() => Element | null);
 }
-
-/* -------------------------------------------------------------------------
- * Task 4 — store state and props.
- * ---------------------------------------------------------------------- */
 
 export interface ShortcutStoreState {
   /**
@@ -221,6 +231,23 @@ export interface ShortcutStoreProps extends StoreProps<ShortcutStoreState> {
   keys?: Record<string, string | null>;
   /** The enclosing level. A PLAIN PROPERTY, never the `stores` argument. */
   parent?: ShortcutStore;
+  /**
+   * An existing shortcut store. Narrower than the generic `store` prop
+   * every other Ariakit store takes (`Store<Partial<S>>`): a shortcut
+   * store's registrations, key index and scope tree are private closures
+   * outside its reactive state, so a framework binding built on this
+   * function needs the concrete type to adopt one outright -- registry
+   * included -- rather than only keeping state in sync with a second one.
+   */
+  store?: ShortcutStore;
+}
+
+/** A command's current, by-name availability. @see ShortcutStoreFunctions.getAvailability */
+export interface ShortcutAvailability {
+  /** Whether the command's effective `enabled` allows it to fire. */
+  enabled: boolean;
+  /** Whether the command's declared scope currently contains focus. */
+  inScope: boolean;
 }
 
 export interface ShortcutStoreFunctions {
@@ -235,14 +262,16 @@ export interface ShortcutStoreFunctions {
    */
   registerCommand: (options: ShortcutCommandOptions) => () => void;
   /**
-   * Registers a focus scope and returns a handle with an `unregister`
-   * method. Pass the handle as another scope's `parent` to nest it.
+   * Registers a focus scope and returns a function that unregisters it.
+   * Pass the SAME `element` given here as another scope's `parent` to nest
+   * it: a scope is matched by that value's identity, not by a live
+   * reference to this call's result.
    */
   registerScope: (options: {
     element: Element | (() => Element | null);
-    parent?: ShortcutScopeHandle;
+    parent?: Element | (() => Element | null);
     store?: ShortcutStore;
-  }) => ShortcutScopeHandle & { unregister: () => void };
+  }) => () => void;
   /**
    * The shortcuts currently bound to a command name, normalized, resolved
    * for the platform, and after any override.
@@ -275,6 +304,27 @@ export interface ShortcutStoreFunctions {
    * enabled, or when `onTrigger` itself returned `false` to decline.
    */
   runOnTrigger: (command: string, event: ShortcutEvent) => boolean;
+  /**
+   * A command's current availability, by name: `enabled` is the store
+   * chain's effective `enabled` ANDed with the declaration's own, and
+   * `inScope` reflects live focus containment against its declared scope.
+   * Reads fresh state and DOM focus on every call, so it is safe from
+   * render, but is not itself reactive -- pair it with a framework binding
+   * for that.
+   * @example
+   * store.getAvailability("save"); // { enabled: true, inScope: true }
+   */
+  getAvailability: (command: string) => ShortcutAvailability;
+  /**
+   * Whether this level's `platform` came from an app-supplied answer --
+   * this level's own prop, or an ancestor's -- rather than from
+   * `getShortcutPlatform()`'s guess. A framework binding uses this to
+   * gate display output that would otherwise mismatch between a server
+   * guess and the real client platform.
+   * @example
+   * store.isPlatformExplicit(); // false unless `platform` was passed
+   */
+  isPlatformExplicit: () => boolean;
   /**
    * Adds another document to the dispatcher and returns a detach function.
    * The listener is on the ambient document by default, so a same-origin
@@ -312,8 +362,8 @@ function asInternal(store: ShortcutStore): ShortcutStoreInternal {
 }
 
 /* -------------------------------------------------------------------------
- * Task 7, step 1 and 8 — one listener per document, capture phase,
- * reference-counted across however many stores are attached to it.
+ * One listener per document, capture phase, reference-counted across
+ * however many stores are attached to it.
  *
  * A total order over all live candidates is computed from a FLAT pool of the
  * stores attached to the document the event fired on, rather than by
@@ -376,8 +426,8 @@ function detachStoreFromDocument(store: ShortcutStoreInternal, doc: Document) {
 }
 
 // Per-store, per-document reference count: retained once per registration
-// (Task 7, step 8) and once per explicit `attach()` call (Task 8, step 4), so
-// either mechanism keeps the store attached until BOTH release it.
+// and once per explicit `attach()` call, so either mechanism keeps the
+// store attached until BOTH release it.
 function retainDocument(store: ShortcutStoreInternal, doc: Document) {
   const count = store.documentRefs.get(doc) ?? 0;
   store.documentRefs.set(doc, count + 1);
@@ -393,10 +443,6 @@ function releaseDocument(store: ShortcutStoreInternal, doc: Document) {
     store.documentRefs.set(doc, count - 1);
   }
 }
-
-/* -------------------------------------------------------------------------
- * A5 — resolving the focus origin.
- * ---------------------------------------------------------------------- */
 
 function resolveFocusOrigin(event: KeyboardEvent): Element | null {
   const composed =
@@ -430,23 +476,26 @@ function buildFocusPath(origin: Element): Element[] {
   return path;
 }
 
-/* -------------------------------------------------------------------------
- * A6 — scope regions.
- * ---------------------------------------------------------------------- */
-
 // Returns the index in `path` of the deepest element belonging to this
 // scope's region (its own element, or any descendant scope's), or Infinity
 // when the origin is outside it. Lower index means deeper, means more
-// specific.
-function regionDepth(scope: ScopeRecord, path: readonly Element[]): number {
+// specific. "Descendant" is found by scanning the registry for a `parent`
+// that resolves to THIS element, not by a maintained children list.
+function regionDepth(
+  scope: ScopeRecord,
+  path: readonly Element[],
+  registry: ReadonlySet<ScopeRecord>,
+): number {
   let best = Number.POSITIVE_INFINITY;
   const own = resolveElement(scope.element);
   if (own) {
     const index = path.indexOf(own);
     if (index !== -1) best = Math.min(best, index);
   }
-  for (const child of scope.children) {
-    best = Math.min(best, regionDepth(child, path));
+  for (const candidate of registry) {
+    if (candidate === scope) continue;
+    if (candidate.parent !== scope.element) continue;
+    best = Math.min(best, regionDepth(candidate, path, registry));
   }
   return best;
 }
@@ -486,7 +535,9 @@ function resolveScopeDepth(
     const element = "current" in ref ? ref.current : ref;
     if (!element) continue;
     const record = findScopeRecord(scopeRegistry, element);
-    const index = record ? regionDepth(record, path) : path.indexOf(element);
+    const index = record
+      ? regionDepth(record, path, scopeRegistry)
+      : path.indexOf(element);
     if (index < 0 || index === Number.POSITIVE_INFINITY) continue;
     matched = true;
     if (index < best) best = index;
@@ -494,16 +545,21 @@ function resolveScopeDepth(
   return matched ? best : null;
 }
 
-/* -------------------------------------------------------------------------
- * A3, A4 — indexing and per-field merging.
- * ---------------------------------------------------------------------- */
-
+// `enabled` is deliberately NOT here. A command name can have one
+// declaration and many references, each a separate registration; every
+// rendered reference contributes its own concrete `enabled` (typically
+// derived from whether ITS element is disabled). Merging it like the fields
+// below, last-registration-wins, would let a single disabled reference -- or
+// simply the last one to mount -- switch off the entire logical command, and
+// would warn on every extra reference as if it were a conflicting
+// declaration. Dispatch reads each candidate registration's own `enabled`
+// instead (see `runForLookupKey`); `trigger`/`runOnTrigger` read the
+// declaration's own `enabled`, tracked below alongside `onTrigger`.
 const DECLARATION_FIELDS = [
   "keys",
   "onTrigger",
   "preventDefault",
   "scope",
-  "enabled",
   "enabledInTextbox",
 ] as const;
 
@@ -535,7 +591,7 @@ function addIndexedKeys(
   }
 }
 
-/** Merges every live registration under one name, per field (A4). */
+/** Merges every live registration under one name, per field. */
 function computeMergedCommand(
   store: ShortcutStoreInternal,
   name: string,
@@ -553,6 +609,11 @@ function computeMergedCommand(
       if (defined.has(field)) conflicts.add(field);
       defined.add(field);
       (merged as unknown as Record<string, unknown>)[field] = value;
+      // Track `enabled` alongside its owner: whichever registration's
+      // `onTrigger` wins the merge above is "the declaration" that
+      // `trigger()`/`runOnTrigger()` actually invoke, so its own `enabled`
+      // (not an unrelated reference's) is what should gate them.
+      if (field === "onTrigger") merged.enabled = registration.enabled ?? true;
     }
     if (registration.element !== undefined) {
       const element = registration.element;
@@ -644,10 +705,6 @@ function getMergedFor(
   return store.mergedCache.get(registration.command);
 }
 
-/* -------------------------------------------------------------------------
- * A7 — the dispatch pipeline.
- * ---------------------------------------------------------------------- */
-
 interface Candidate {
   id: number;
   store: ShortcutStoreInternal;
@@ -688,34 +745,39 @@ interface ClaimResult {
   shortcutEvent: ShortcutEvent;
 }
 
-/** A7 steps 4 through 7, for one lookup key. */
+/** Collects, ranks, and runs the winning candidate, for one lookup key. */
 function runForLookupKey(
   dispatcher: DocumentDispatcher,
   lookupKey: string,
   origin: Element,
   path: readonly Element[],
   originalEvent: KeyboardEvent,
-  isBarePrintable: boolean,
 ): ClaimResult | null {
   const originIsTextbox = isTextbox(origin as HTMLElement);
 
-  // Step 4: collect every candidate registration for this lookup key, from
-  // every store attached to this document.
+  // Collect every candidate registration for this lookup key, from every
+  // store attached to this document.
   const candidates: Candidate[] = [];
   for (const store of dispatcher.stores) {
     const ids = store.keyIndex.get(lookupKey);
     if (!ids?.size) continue;
+    const state = store.getState();
     // The store's effective `enabled` is already the AND of its own setting
     // and every ancestor's.
-    if (!store.getState().enabled) continue;
+    if (!state.enabled) continue;
+    // Read from the store's own state rather than calling global platform
+    // detection in this hot path.
+    const isBarePrintable = isBarePrintableKey(originalEvent, state.platform);
     for (const id of ids) {
       const registration = store.registrations.get(id);
       if (!registration) continue;
       const merged = getMergedFor(store, registration);
       if (!merged) continue;
 
-      // Step 5: drop filters, cheapest first.
-      if (!merged.enabled) continue;
+      // Drop filters, cheapest first. `enabled` is evaluated per
+      // REGISTRATION, not from the merged declaration: a disabled reference
+      // must stop only itself, never the whole named command.
+      if (registration.enabled === false) continue;
       if (registration.element !== undefined) {
         const element = resolveElement(registration.element);
         if (element) {
@@ -755,7 +817,7 @@ function runForLookupKey(
     }
   }
 
-  // Step 6: a total order over all live candidates, not a walk of a chain.
+  // A total order over all live candidates, not a walk of a chain.
   candidates.sort(
     (a, b) =>
       a.scopeDepth - b.scopeDepth || // ASC: lower index = deeper = first
@@ -763,7 +825,7 @@ function runForLookupKey(
       b.id - a.id, // DESC: last registered first
   );
 
-  // Step 7: run in rank order, each command name at most once per event.
+  // Run in rank order, each command name at most once per event.
   const seen = new Set<string>();
   for (const candidate of candidates) {
     const seenKey =
@@ -816,27 +878,26 @@ function runForLookupKey(
 }
 
 function handleKeyDown(dispatcher: DocumentDispatcher, event: KeyboardEvent) {
-  // Step 0a.
   if (dispatcher.handledEvents.has(event)) return;
 
-  // Step 1 (reject per A2) and step 3 (build the lookup keys) are both
-  // produced by getEventLookupKeys, which the step 0b signature also needs.
+  // Rejecting an event that cannot represent a shortcut, and building the
+  // lookup keys, are both produced by getEventLookupKeys, which the
+  // duplicate-event check below also needs.
   const lookup = getEventLookupKeys(event);
   if (!lookup) return;
 
-  // Step 2: resolve the focus origin.
   const origin = resolveFocusOrigin(event);
   if (!origin) return;
 
-  // Step 1 continued: a ShortcutInput marks itself while recording. The
-  // dispatcher runs in the capture phase, so no amount of stopPropagation
-  // from the input's own handler reaches it.
+  // A ShortcutInput marks itself while recording. The dispatcher runs in
+  // the capture phase, so no amount of stopPropagation from the input's own
+  // handler reaches it.
   if (origin.closest("[data-shortcut-recording]")) return;
 
-  // Step 0b: a virtual-focus Combobox produces two document-level keydowns
-  // per physical press, and the second is a NEW event object. Deliberately
-  // NOT gated on whether the event was user-generated: a synthetic event is
-  // not user-generated, which would make every command untestable in
+  // A virtual-focus Combobox produces two document-level keydowns per
+  // physical press, and the second is a NEW event object. Deliberately NOT
+  // gated on whether the event was user-generated: a synthetic event is not
+  // user-generated, which would make every command untestable in
   // happy-dom.
   if (
     dispatcher.lastSignatureKey === lookup.primary &&
@@ -858,29 +919,12 @@ function handleKeyDown(dispatcher: DocumentDispatcher, event: KeyboardEvent) {
   dispatcher.handledEvents.add(event);
 
   const path = buildFocusPath(origin);
-  const isBarePrintable = isBarePrintableKey(event);
 
-  let claim = runForLookupKey(
-    dispatcher,
-    lookup.primary,
-    origin,
-    path,
-    event,
-    isBarePrintable,
-  );
-  // Step 8.
+  let claim = runForLookupKey(dispatcher, lookup.primary, origin, path, event);
   if (!claim && lookup.secondary) {
-    claim = runForLookupKey(
-      dispatcher,
-      lookup.secondary,
-      origin,
-      path,
-      event,
-      isBarePrintable,
-    );
+    claim = runForLookupKey(dispatcher, lookup.secondary, origin, path, event);
   }
 
-  // Step 9.
   if (claim) {
     const prevent = resolveBooleanOrCallback(
       claim.merged.preventDefault,
@@ -936,6 +980,13 @@ export function createShortcutStore(
     keys: props.keys ?? {},
   };
 
+  // Fixed at creation: whether `platform` resolved from an app-supplied
+  // answer -- this level's own prop, or an ancestor's -- rather than from
+  // getShortcutPlatform()'s guess. A framework binding uses this to decide
+  // whether the guess is safe to render before the real platform is known.
+  const platformExplicit =
+    props.platform !== undefined || (parent?.isPlatformExplicit() ?? false);
+
   // Omit an undefined parent so createStore keeps its zero-parent fast path.
   const shortcut = props.store
     ? createStore(initialState, props.store)
@@ -978,6 +1029,8 @@ export function createShortcutStore(
     setKeys,
     trigger,
     runOnTrigger,
+    getAvailability,
+    isPlatformExplicit,
     attach,
     formatKeys,
   };
@@ -1023,8 +1076,8 @@ export function createShortcutStore(
     }
     cleanups.push(
       sync(shortcut, ["platform"], () => {
-        // Re-index when platform changes (A3). The parent-driven branch
-        // above already re-indexes; this also covers a platform prop set
+        // Re-index when platform changes. The parent-driven branch above
+        // already re-indexes; this also covers a platform prop set
         // directly on this level.
         reindexAll(store);
       }),
@@ -1111,28 +1164,23 @@ export function createShortcutStore(
 
   function registerScope(options: {
     element: Element | (() => Element | null);
-    parent?: ShortcutScopeHandle;
+    parent?: Element | (() => Element | null);
     store?: ShortcutStore;
-  }): ShortcutScopeHandle & { unregister: () => void } {
+  }): () => void {
     if (options.store && options.store !== store) {
       return asInternal(options.store).registerScope(options);
     }
-    const parentRecord = options.parent;
     const record: ScopeRecord = {
       element: options.element,
-      parent: parentRecord,
-      children: new Set(),
+      parent: options.parent,
     };
     scopeRegistry.add(record);
-    parentRecord?.children.add(record);
     let unregistered = false;
-    const unregister = () => {
+    return () => {
       if (unregistered) return;
       unregistered = true;
       scopeRegistry.delete(record);
-      parentRecord?.children.delete(record);
     };
-    return Object.assign(record, { unregister });
   }
 
   function getKeys(command: string): string[] {
@@ -1196,6 +1244,31 @@ export function createShortcutStore(
     if (!merged.onTrigger) return false;
     const result = merged.onTrigger(event);
     return result !== false;
+  }
+
+  function getAvailability(command: string): ShortcutAvailability {
+    const merged = mergedCache.get(command);
+    const enabled = !!merged && merged.enabled && shortcut.getState().enabled;
+    return { enabled, inScope: isDeclaredScopeFocused(merged?.scope) };
+  }
+
+  function isPlatformExplicit(): boolean {
+    return platformExplicit;
+  }
+
+  // Mirrors dispatch's own scope resolution (resolveScopeDepth), against
+  // live focus rather than a keydown's origin, so this never disagrees
+  // with what pressing the key right now would actually do.
+  // document.activeElement is only ever null before a document has a body.
+  function isDeclaredScopeFocused(
+    scopeOption: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
+  ): boolean {
+    if (scopeOption == null) return true;
+    if (!canUseDOM) return true;
+    const active = document.activeElement;
+    if (!active) return true;
+    const path = buildFocusPath(active);
+    return resolveScopeDepth(scopeOption, path, scopeRegistry) !== null;
   }
 
   function attach(doc: Document): () => void {

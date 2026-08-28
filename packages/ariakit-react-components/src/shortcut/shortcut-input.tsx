@@ -113,7 +113,7 @@ export const useShortcutInput = createHook<TagName, ShortcutInputOptions>(
 
     const platform = useStoreState(store, "platform");
     const keyNames = useStoreState(store, "keyNames");
-    // The value is canonical text (decision 35); this is only what it
+    // The value is canonical text; this is only what it
     // DISPLAYS. store.formatKeys fills platform, glyphs and keyNames from the
     // store's own state, so a glyph override configured on the provider is
     // honored here for free.
@@ -155,7 +155,7 @@ export const useShortcutInput = createHook<TagName, ShortcutInputOptions>(
       if (event.key === "Tab") return;
 
       // Rejects dead keys, IME composition, AltGraph and a lone modifier
-      // press (A2), exactly like the document dispatcher would. Re-derives
+      // press, exactly like the document dispatcher would. Re-derives
       // held modifiers from the event itself rather than accumulating a set
       // across keydowns, so "a", then "b", then "c" replaces the value each
       // time instead of merging into a sequence -- the defect this guards
@@ -266,7 +266,7 @@ export interface ShortcutInputOptions<
   defaultKeys?: string;
   /**
    * Called once, on commit, with canonical text, or `null` when the value is
-   * cleared. Not a DOM `ChangeEvent`: see decision 35.
+   * cleared. Not a DOM `ChangeEvent`: it is a canonical keys string, not a DOM event.
    */
   setKeys?: (keys: string | null) => void;
   /**

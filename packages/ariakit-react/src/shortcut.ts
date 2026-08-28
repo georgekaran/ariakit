@@ -35,11 +35,13 @@ export {
   useShortcutScope,
 } from "@ariakit/react-components/shortcut/shortcut-scope";
 export type {
+  ShortcutAvailability,
   ShortcutStore,
   ShortcutStoreProps,
   ShortcutStoreState,
 } from "@ariakit/react-components/shortcut/shortcut-store";
 export {
+  useShortcutAvailability,
   useShortcutCommand,
   useShortcutKeys,
   useShortcutStore,

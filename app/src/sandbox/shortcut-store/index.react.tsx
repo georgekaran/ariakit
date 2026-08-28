@@ -49,12 +49,12 @@ function Level({
   );
 }
 
-// A4 / A7 step 6: levels nest through the React tree, and an inner level
+// levels nest through the React tree, and an inner level
 // shadows an outer one for the SAME keys because a deeper store always
 // outranks a shallower one (store depth is compared right after scope
 // depth, before registration order). Disabling a level is transparent, not
 // a candidate filter that stops the walk there: the dispatcher drops every
-// candidate from a disabled store outright (A7 step 4), so the outer level
+// candidate from a disabled store outright, so the outer level
 // underneath is still live and gets its turn. Disabling the root ANDs
 // `false` down through every descendant's effective `enabled`, which is
 // what makes it a real master switch.
@@ -81,7 +81,7 @@ function NestedLevels() {
   );
 }
 
-// A4: an override -- from the provider's `keys` map, or from store.setKeys()
+// an override -- from the provider's `keys` map, or from store.setKeys()
 // below -- beats the merged `keys` declaration entirely, whatever the mount
 // order. It does not add an alternative; it replaces the bound keys, so the
 // originally declared "Control+S" goes dead while the override is active.

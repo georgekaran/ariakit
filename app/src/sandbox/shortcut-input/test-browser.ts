@@ -10,12 +10,7 @@ withFramework(import.meta.dirname, async ({ test }) => {
     await page.keyboard.down("Control");
     await page.keyboard.press("B");
     await page.keyboard.up("Control");
-    // The provider pins platform="apple" (see index.react.tsx), so the
-    // canonical "Control+B" the recorder committed displays as the glyph
-    // "⌃B", not the word "Control".
     await test.expect(input).toHaveValue("⌃B");
-    // Control+B is bound to the unrelated Bold command elsewhere on the
-    // page. data-shortcut-recording must have kept it from firing.
     await test
       .expect(page.locator("output", { hasText: "bold clicks" }))
       .toHaveText("bold clicks: 0");
@@ -38,14 +33,9 @@ withFramework(import.meta.dirname, async ({ test }) => {
     const input = q.textbox("Shortcut");
     await input.focus();
     await page.keyboard.press("Control+S");
-    // The provider pins platform="apple" (see index.react.tsx), so the
-    // canonical "Control+S" the recorder committed displays as the glyph
-    // "⌃S", not the word "Control".
     await test.expect(input).toHaveValue("⌃S");
     await input.focus();
     await page.keyboard.press("Escape");
-    // Escape cancels the new recording session; the previously committed
-    // value must be unchanged.
     await test.expect(input).toHaveValue("⌃S");
   });
 

@@ -28,8 +28,6 @@ test("a disabled inner level is transparent, so the outer one underneath runs", 
 test("disabling the root switches off every level underneath it", async () => {
   await click(testId("toggle-outer"));
   expect(testId("effective-outer").textContent).toBe("disabled");
-  // The inner level never turned its own setting off, but its EFFECTIVE
-  // enabled is still the AND of the whole chain.
   expect(testId("effective-inner").textContent).toBe("disabled");
   await press("k", anchor(), { ctrlKey: true });
   expect(testId("outer-fired").textContent).toBe("outer fired: 0");
@@ -61,7 +59,6 @@ test("store.setKeys rebinds a command by name, replacing the old binding", async
   await press("r", anchor(), { ctrlKey: true });
   expect(testId("remap-fired").textContent).toBe("remap fired: 1");
   await click(testId("remap-to-t"));
-  // The override REPLACES the declared binding: the old key goes dead.
   await press("r", anchor(), { ctrlKey: true });
   expect(testId("remap-fired").textContent).toBe("remap fired: 1");
   await press("t", anchor(), { ctrlKey: true });

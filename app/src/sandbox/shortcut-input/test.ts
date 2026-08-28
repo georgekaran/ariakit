@@ -20,9 +20,8 @@ function output(text: string) {
   return match;
 }
 
-// Ends the current recording session and starts a new one. A commit already
-// ends recording on its own, but focus() alone is a no-op on an
-// already-focused element, so restarting needs an explicit blur first.
+// focus() is a no-op on an already-focused element, so restarting needs
+// an explicit blur first.
 async function restartRecording() {
   await blur(input());
   await focus(input());

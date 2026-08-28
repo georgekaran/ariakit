@@ -41,7 +41,7 @@ async function renderAndHydrate(
     });
     // A hydration mismatch is reported through console.error, so an empty
     // mock here is exactly what "hydration produces no mismatch warning"
-    // means (Task 14, Step 3).
+    // means it.
     expect(consoleError).not.toHaveBeenCalled();
 
     await (assertClient ?? assertServer)(container);
@@ -56,12 +56,33 @@ async function renderAndHydrate(
   }
 }
 
-test("with no platform prop, the server renders no kbd and no aria-keyshortcuts", async () => {
-  await renderAndHydrate(createElement(SsrShortcut), (container) => {
-    const button = container.querySelector("button");
-    expect(button).not.toHaveAttribute("aria-keyshortcuts");
-    expect(container.querySelectorAll("kbd[data-key]")).toHaveLength(0);
-  });
+test("with no platform prop, the server renders neither, and the client reveals both after mount", async () => {
+  // "apple:Meta+B" (the default) resolves to nothing at all on the server's
+  // "other" platform, which would make this assertion pass whether or not
+  // suppression-until-mount actually works. "mod+8" resolves on every
+  // platform, so it is the binding that can actually prove the point.
+  await renderAndHydrate(
+    createElement<SsrShortcutProps>(SsrShortcut, { keys: "mod+8" }),
+    (container) => {
+      const button = container.querySelector("button");
+      expect(button).not.toHaveAttribute("aria-keyshortcuts");
+      expect(container.querySelectorAll("kbd[data-key]")).toHaveLength(0);
+    },
+    (container) => {
+      // The platform is unknowable on the server, but the client knows it
+      // immediately -- once mounted, the guess is no longer a guess, so the
+      // suppression that protected against a wrong one has nothing left to
+      // protect against. Mirrors isApple()'s own check, since this package
+      // has no dependency on @ariakit/components to import it from.
+      const isAppleEnv = /mac|iphone|ipad|ipod/i.test(navigator.platform);
+      const expectedKeys = isAppleEnv ? "Meta+8" : "Control+8";
+      const button = container.querySelector("button");
+      expect(button).toHaveAttribute("aria-keyshortcuts", expectedKeys);
+      expect(
+        container.querySelectorAll("kbd[data-key]").length,
+      ).toBeGreaterThan(0);
+    },
+  );
 });
 
 test('with platform="apple", the server renders both and hydration keeps the shortcut working', async () => {
