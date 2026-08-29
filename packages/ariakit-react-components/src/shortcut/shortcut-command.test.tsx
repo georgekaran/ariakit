@@ -1,7 +1,10 @@
 import { createShortcutStore } from "@ariakit/components/shortcut/shortcut-store";
-import { focus, press, q, render, waitFor } from "@ariakit/test/react";
+import { focus, press, q, render, sleep, waitFor } from "@ariakit/test/react";
 import { useRef } from "react";
 import { afterEach, expect, test, vi } from "vitest";
+import { MenuItem } from "../menu/menu-item.tsx";
+import { MenuProvider } from "../menu/menu-provider.tsx";
+import { Menu } from "../menu/menu.tsx";
 import { ShortcutCommand } from "./shortcut-command.tsx";
 import { useShortcutContext } from "./shortcut-context.tsx";
 import { ShortcutProvider } from "./shortcut-provider.tsx";
@@ -256,6 +259,115 @@ test("a reference does not advertise a command whose declaration is disabled", a
   expect(ariaKeyShortcuts(q.button.ensure("Save reference"))).toBe(null);
 });
 
+test("a disabled reference does not advertise or activate its command", async () => {
+  const declared = vi.fn();
+  const referenced = vi.fn();
+
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutCommand command="save" keys="Control+S" onTrigger={declared}>
+        Save
+      </ShortcutCommand>
+      <ShortcutCommand command="save" enabled={false} onClick={referenced}>
+        Save reference
+      </ShortcutCommand>
+    </ShortcutProvider>,
+  );
+
+  const reference = q.button.ensure("Save reference");
+  expect(ariaKeyShortcuts(reference)).toBe(null);
+
+  // A disabled reference must not bridge a direct click to the
+  // declaration's own handler. The click itself still reaches this
+  // element's own onClick, same as any other element's; clear that before
+  // the next assertion, which is about a different click entirely.
+  reference.click();
+  expect(declared).not.toHaveBeenCalled();
+  referenced.mockClear();
+
+  // Nor may it be the element the keyboard dispatcher clicks: its own
+  // onClick, reachable only through that synthetic click, must not run.
+  await press("s", document.body, { ctrlKey: true });
+  expect(referenced).not.toHaveBeenCalled();
+});
+
+test("<MenuItem disabled render={<ShortcutCommand command=... />}> does not advertise or activate", async () => {
+  const declared = vi.fn();
+  const referenced = vi.fn();
+
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutCommand command="save" keys="Control+S" onTrigger={declared}>
+        Save
+      </ShortcutCommand>
+      <MenuProvider open>
+        <Menu>
+          <MenuItem
+            disabled
+            render={<ShortcutCommand command="save" onClick={referenced} />}
+          >
+            Save reference
+          </MenuItem>
+        </Menu>
+      </MenuProvider>
+    </ShortcutProvider>,
+  );
+
+  const reference = q.menuitem.ensure.hidden("Save reference");
+  expect(ariaKeyShortcuts(reference)).toBe(null);
+
+  reference.click();
+  expect(declared).not.toHaveBeenCalled();
+
+  await press("s", document.body, { ctrlKey: true });
+  expect(referenced).not.toHaveBeenCalled();
+});
+
+test("a reference disabled by its rendered element does not advertise or activate", async () => {
+  // happy-dom's `:disabled` does not implement fieldset inheritance (same
+  // gap noted in packages/ariakit-test/src/shims.ts); polyfilled here.
+  // oxlint-disable-next-line typescript/unbound-method
+  const originalMatches = HTMLButtonElement.prototype.matches;
+  const matchesSpy = vi
+    .spyOn(HTMLButtonElement.prototype, "matches")
+    .mockImplementation(function (this: HTMLButtonElement, selector) {
+      if (selector === ":disabled") {
+        return this.disabled || !!this.closest("fieldset[disabled]");
+      }
+      return originalMatches.call(this, selector);
+    });
+
+  const declared = vi.fn();
+  const referenced = vi.fn();
+
+  try {
+    await renderTree(
+      <ShortcutProvider>
+        <ShortcutCommand command="save" keys="Control+S" onTrigger={declared}>
+          Save
+        </ShortcutCommand>
+        <fieldset disabled>
+          <ShortcutCommand command="save" onClick={referenced}>
+            Save reference
+          </ShortcutCommand>
+        </fieldset>
+      </ShortcutProvider>,
+    );
+
+    const reference = q.button.ensure("Save reference");
+    expect(ariaKeyShortcuts(reference)).toBe(null);
+
+    reference.click();
+    expect(declared).not.toHaveBeenCalled();
+    referenced.mockClear();
+
+    await press("s", document.body, { ctrlKey: true });
+    expect(referenced).not.toHaveBeenCalled();
+  } finally {
+    matchesSpy.mockRestore();
+  }
+});
+
 test("a command inside a disabled fieldset drops aria-keyshortcuts", async () => {
   // happy-dom's `:disabled` does not implement fieldset inheritance (same
   // gap noted in packages/ariakit-test/src/shims.ts); polyfilled here.
@@ -472,6 +584,46 @@ test("useShortcutAvailability updates reactively as focus and enabled change", a
 
   q.button.ensure("disable").click();
   await waitFor(() => expect(availability()).toBe("false:true"));
+});
+
+test("a command's scope follows aria-activedescendant without DOM focus moving", async () => {
+  function App() {
+    const region = useRef<HTMLDivElement>(null);
+    return (
+      <ShortcutProvider>
+        <input aria-label="combobox" />
+        <div ref={region}>
+          <div id="option-in-scope" />
+          <ShortcutCommand
+            command="save"
+            keys="Control+S"
+            scope={region}
+            onTrigger={() => {}}
+          >
+            Save
+          </ShortcutCommand>
+        </div>
+      </ShortcutProvider>
+    );
+  }
+
+  await renderTree(<App />);
+
+  const input = q.textbox.ensure("combobox");
+  await focus(input);
+  // Drain the focusin-driven update before the mutation below, so a pass
+  // can only come from observing that mutation, not from a deferred effect
+  // the focus transition itself already had scheduled.
+  await sleep();
+
+  const save = q.button.ensure("Save");
+  expect(hasInScope(save)).toBe(false);
+
+  // A composite widget, such as Combobox or Menu, moves
+  // aria-activedescendant on its own focused element without moving DOM
+  // focus. No focusin or focusout fires for this.
+  input.setAttribute("aria-activedescendant", "option-in-scope");
+  await waitFor(() => expect(hasInScope(save)).toBe(true));
 });
 
 test("re-rendering the provider with enabled=false stops dispatch", async () => {

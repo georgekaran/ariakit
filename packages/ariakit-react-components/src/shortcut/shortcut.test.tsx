@@ -237,7 +237,7 @@ test("alwaysVisible overrides the by-name gate", async () => {
 });
 
 /* ---------------------------------------------------------------------- *
- * Bug 1 -- the "+" joiner between keys.
+ * The "+" joiner between keys.
  * ---------------------------------------------------------------------- */
 
 test("a non-Apple chord renders the joiner between keys", async () => {
@@ -370,5 +370,73 @@ test("unbinding a named command clears its hint and aria-keyshortcuts", async ()
   await waitFor(() => {
     expect(button.getAttribute("aria-keyshortcuts")).toBe(null);
     expect(document.querySelector("kbd")).toBe(null);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * A `platform` override on `Shortcut` itself.
+ * ---------------------------------------------------------------------- */
+
+test("a platform override applies to a literal keys prop", async () => {
+  await renderTree(
+    <ShortcutProvider platform="windows">
+      <Shortcut keys="mod+S" platform="apple" />
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  const inner = [...outer.querySelectorAll("kbd[data-key]")];
+  expect(inner.map((el) => el.getAttribute("data-key"))).toEqual(["meta", "s"]);
+  expect(outer.textContent).toBe("⌘S");
+});
+
+test("a platform override applies to a named command", async () => {
+  await renderTree(
+    <ShortcutProvider platform="windows">
+      <ShortcutCommand command="save" keys="mod+S" onTrigger={() => {}} />
+      <Shortcut command="save" platform="apple" />
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  const inner = [...outer.querySelectorAll("kbd[data-key]")];
+  expect(inner.map((el) => el.getAttribute("data-key"))).toEqual(["meta", "s"]);
+});
+
+test("a platform override applies to keys inherited from a ShortcutCommand", async () => {
+  await renderTree(
+    <ShortcutProvider platform="windows">
+      <ShortcutCommand command="save" keys="mod+S" onTrigger={() => {}}>
+        Save <Shortcut platform="apple" />
+      </ShortcutCommand>
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  const inner = [...outer.querySelectorAll("kbd[data-key]")];
+  expect(inner.map((el) => el.getAttribute("data-key"))).toEqual(["meta", "s"]);
+});
+
+test("a platform override respects a remapped command", async () => {
+  const store = createShortcutStore({ platform: "windows" });
+
+  await renderTree(
+    <ShortcutProvider store={store}>
+      <ShortcutCommand command="save" keys="mod+S" onTrigger={() => {}} />
+      <Shortcut command="save" platform="apple" />
+    </ShortcutProvider>,
+  );
+
+  store.setKeys("save", "mod+J");
+
+  // The override beats the declaration under any platform: mod+J resolved
+  // for apple, not the mod+S it replaced.
+  await waitFor(() => {
+    const outer = outerKbd();
+    const inner = [...outer.querySelectorAll("kbd[data-key]")];
+    expect(inner.map((el) => el.getAttribute("data-key"))).toEqual([
+      "meta",
+      "j",
+    ]);
   });
 });

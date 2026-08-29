@@ -18,7 +18,7 @@ import {
 import type { ShortcutStore } from "./shortcut-store.ts";
 import {
   useShortcutAvailability,
-  useShortcutKeys,
+  useShortcutDeclaredKeys,
   useShortcutPlatform,
 } from "./shortcut-store.ts";
 
@@ -68,7 +68,13 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
       }),
       [platform, storeKeyNames, keyNames],
     );
-    const namedKeys = useShortcutKeys({ command: command ?? "", store });
+    // The raw declaration behind `command`, before platform resolution:
+    // see the comment on resolvedKeys below for why the raw form, not
+    // useShortcutKeys, is what platformProp needs.
+    const namedDeclaredKeys = useShortcutDeclaredKeys({
+      command: command ?? "",
+      store,
+    });
 
     // Always called, never short-circuited by `platformProp`: a
     // conditional hook call would break across renders where it changes.
@@ -78,13 +84,27 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
 
     // Only the first alternative that resolves is ever shown; an app that
     // wants every alternative maps over useShortcutKeys itself.
+    //
+    // Every source is read here before platform resolution, and resolved
+    // for `platform`, which already carries platformProp when given: a
+    // literal keysProp holds a raw declaration directly, and a named
+    // command or an enclosing ShortcutCommand hold one through
+    // namedDeclaredKeys or commandContext.declaredKeys. useShortcutKeys and
+    // commandContext.keys, by contrast, hand back text already resolved
+    // for the STORE's own platform: mod is already a concrete Meta or
+    // Control, and any apple:/pc: alternative that lost is already gone,
+    // so re-resolving that result could never recover what platformProp's
+    // platform would have picked instead.
+    const declared = keysProp
+      ? keysProp
+      : command
+        ? namedDeclaredKeys
+        : commandContext?.declaredKeys;
     const resolvedKeys = useMemo(() => {
       if (!settled) return [];
-      if (keysProp) return resolveKeys(keysProp, platform).map((r) => r.text);
-      if (command) return namedKeys;
-      if (commandContext) return commandContext.keys;
-      return [];
-    }, [settled, keysProp, platform, command, namedKeys, commandContext]);
+      if (declared == null) return [];
+      return resolveKeys(declared, platform).map((r) => r.text);
+    }, [settled, declared, platform]);
 
     const first = resolvedKeys[0];
     const displayKeys = first ? first.split("+") : [];

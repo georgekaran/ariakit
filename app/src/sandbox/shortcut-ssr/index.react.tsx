@@ -1,4 +1,9 @@
-import { Shortcut, ShortcutCommand, ShortcutProvider } from "@ariakit/react";
+import {
+  Shortcut,
+  ShortcutCommand,
+  ShortcutProvider,
+  useShortcutStore,
+} from "@ariakit/react";
 import { useState } from "react";
 
 export interface SsrShortcutProps {
@@ -40,6 +45,32 @@ export function SsrShortcut({
         Bold <Shortcut />
       </ShortcutCommand>
       <output>clicks: {clicks}</output>
+    </ShortcutProvider>
+  );
+}
+
+export interface SsrAdoptedShortcutProps {
+  /**
+   * Explicit only on the provider, never on the store below: `useShortcutStore`
+   * is called with no `platform` of its own, the same as a store built
+   * outside React before this component ever mounts. Left unset, this
+   * behaves like `SsrShortcut` with no `platform`.
+   */
+  platform?: "apple" | "windows" | "other";
+}
+
+/**
+ * Adopts a store whose own construction never saw `platform`; only the
+ * provider states it. Proves an adopted store's SSR output is just as
+ * deterministic as a freshly created one's.
+ */
+export function SsrAdoptedShortcut({ platform }: SsrAdoptedShortcutProps = {}) {
+  const store = useShortcutStore();
+  return (
+    <ShortcutProvider store={store} platform={platform}>
+      <ShortcutCommand command="save" keys="mod+S">
+        Save <Shortcut />
+      </ShortcutCommand>
     </ShortcutProvider>
   );
 }

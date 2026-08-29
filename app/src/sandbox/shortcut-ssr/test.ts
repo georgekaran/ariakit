@@ -4,8 +4,11 @@ import { act, createElement } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { expect, test, vi } from "vitest";
-import type { SsrShortcutProps } from "./index.react.tsx";
-import { SsrShortcut } from "./index.react.tsx";
+import type {
+  SsrAdoptedShortcutProps,
+  SsrShortcutProps,
+} from "./index.react.tsx";
+import { SsrAdoptedShortcut, SsrShortcut } from "./index.react.tsx";
 
 /**
  * Renders an element to a static container, asserts the pre-hydration markup,
@@ -154,6 +157,21 @@ test("a provider keys null unbinds a command on the server", async () => {
       const button = container.querySelector("button");
       expect(button).not.toHaveAttribute("aria-keyshortcuts");
       expect(container.querySelectorAll("kbd[data-key]")).toHaveLength(0);
+    },
+  );
+});
+
+test("an explicit provider platform makes an adopted store's SSR deterministic", async () => {
+  await renderAndHydrate(
+    createElement<SsrAdoptedShortcutProps>(SsrAdoptedShortcut, {
+      platform: "apple",
+    }),
+    (container) => {
+      const button = container.querySelector("button");
+      expect(button).toHaveAttribute("aria-keyshortcuts", "Meta+S");
+      expect(
+        container.querySelectorAll("kbd[data-key]").length,
+      ).toBeGreaterThan(0);
     },
   );
 });

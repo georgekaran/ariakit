@@ -335,3 +335,26 @@ test("replacing the store prop applies the keys map to the new store", async () 
 
   expect(storeB.getKeys("save")).toEqual(["Control+Shift+S"]);
 });
+
+test("replacing the store prop does not write the new props into the old store", async () => {
+  const storeA = createShortcutStore();
+  const storeB = createShortcutStore();
+
+  const result = await render(
+    <ShortcutProvider store={storeA} keys={{ save: "Control+S" }}>
+      <ShortcutCommand command="save" keys="Control+Q" onTrigger={() => {}} />
+    </ShortcutProvider>,
+  );
+  unmount = result.unmount;
+
+  expect(storeA.getKeys("save")).toEqual(["Control+S"]);
+
+  await result.rerender(
+    <ShortcutProvider store={storeB} keys={{ save: "Control+J" }}>
+      <ShortcutCommand command="save" keys="Control+Q" onTrigger={() => {}} />
+    </ShortcutProvider>,
+  );
+
+  expect(storeA.getKeys("save")).toEqual(["Control+S"]);
+  expect(storeB.getKeys("save")).toEqual(["Control+J"]);
+});

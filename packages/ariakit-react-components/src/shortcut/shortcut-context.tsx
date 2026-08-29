@@ -68,6 +68,15 @@ export interface ShortcutCommandContextValue {
   /** The resolved shortcuts the command currently exposes, normalized. */
   keys: string[];
   /**
+   * The command's raw declared keys, after any override but before
+   * platform resolution. `null` means bound but currently unbound;
+   * `undefined` means nothing declared yet. Lets a nested `Shortcut`
+   * resolve its own `platform` override against the original declaration
+   * instead of `keys` above, which is already resolved for the store's own
+   * platform.
+   */
+  declaredKeys: string | null | undefined;
+  /**
    * The command's effective `enabled`, already ANDed with the store's own
    * effective `enabled`.
    */

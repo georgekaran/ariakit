@@ -165,7 +165,11 @@ export interface ShortcutCommandOptions {
    * @default false for a bare printable key, true otherwise
    */
   enabledInTextbox?: BooleanOrCallback<ShortcutEvent>;
-  /** The element this registration contributes as a reference. */
+  /**
+   * @internal The element this registration contributes as a reference.
+   * Set by `ShortcutCommand` to register the DOM node it renders; no public
+   * entry point accepts it.
+   */
   element?: Element | (() => Element | null);
   /** Registers against a specific store instead of the one this was called on. */
   store?: ShortcutStore;
@@ -375,6 +379,23 @@ export interface ShortcutStoreInternalFunctions {
    */
   getAvailability: (command: string) => ShortcutAvailability;
   /**
+   * A command's raw declared `keys`, by name: whatever `getKeys` resolves
+   * for the platform, one step earlier, after any `setKeys` override but
+   * before a platform picks a winner among its alternatives. `null` means
+   * the command is bound but currently unbound, through an override of
+   * `null` or a declaration of `keys: null`; `undefined` means nothing is
+   * declared for it at all.
+   *
+   * `useShortcutKeys` and a `ShortcutCommand`'s own context value both hand
+   * back text already resolved for the store's own platform, which a
+   * `platform` prop overriding that can no longer recover the alternative
+   * from. A framework binding reads this instead, and resolves it itself
+   * for whichever platform it was asked to render.
+   * @example
+   * store.getDeclaredKeys("save"); // "mod+S"
+   */
+  getDeclaredKeys: (command: string) => string | null | undefined;
+  /**
    * Whether this level's `platform` came from an app-supplied answer (this
    * level's own prop, or an ancestor's) rather than from
    * `getShortcutPlatform()`'s guess. A framework binding uses this to
@@ -384,6 +405,14 @@ export interface ShortcutStoreInternalFunctions {
    * store.isPlatformExplicit(); // false unless `platform` was passed
    */
   isPlatformExplicit: () => boolean;
+  /**
+   * Marks `platform` explicit from here on, without changing its value.
+   * For a framework binding to call at adoption, when the level adopting
+   * a store states `platform` explicitly but the store's own construction
+   * did not: `isPlatformExplicit` would otherwise only learn that through
+   * an effect, too late for a server render to see it.
+   */
+  markPlatformExplicit: () => void;
   /**
    * @internal Joins this store to `parent`'s chain for a bounded period,
    * for a framework binding that adopts a store built outside React into
@@ -410,7 +439,6 @@ interface ShortcutStoreInternal
   uid: number;
   parent?: ShortcutStoreInternal;
   children: Set<ShortcutStoreInternal>;
-  depth: number;
   registrations: Map<number, Registration>;
   keyIndex: Map<string, Set<number>>;
   nameIndex: Map<string, Set<number>>;
@@ -440,14 +468,32 @@ function chainIncludes(
   return false;
 }
 
+// A store's rank in its chain, counted by walking `parent` rather than
+// cached on the store: `attachParent` reassigns `parent` on both attach and
+// detach, so a depth read this way can never go stale for the store itself
+// or for any descendant walking up through it, however many levels an
+// ancestor was reparented.
+function storeDepth(store: ShortcutStoreInternal): number {
+  let depth = 0;
+  let current = store.parent;
+  while (current) {
+    depth += 1;
+    current = current.parent;
+  }
+  return depth;
+}
+
 /*
  * One listener per document, capture phase, reference-counted across
  * however many stores are attached to it. A total order over all live
  * candidates is computed from a flat pool of the stores attached to the
  * document the event fired on, rather than by walking a parent/child chain,
- * since two sibling providers are two chains and one listener. Each store's
- * own precomputed `depth` lets the ranking comparator reproduce "deeper
- * store wins" with no live tree traversal.
+ * since two sibling providers are two chains and one listener. Each
+ * candidate's depth is resolved by walking its own store's `parent` chain
+ * (see `storeDepth`) rather than read from a cached field, so the ranking
+ * comparator reproduces "deeper store wins" without a cache that
+ * `attachParent` would otherwise have to keep synced across every
+ * descendant.
  */
 
 interface DocumentDispatcher {
@@ -861,13 +907,20 @@ interface ClaimResult {
   shortcutEvent: ShortcutEvent;
 }
 
-/** Collects, ranks, and runs the winning candidate, for one lookup key. */
+/**
+ * Collects, ranks, and runs the winning candidate, for one lookup key.
+ * `seen` is the whole event's once-per-command guard, not just this lookup
+ * key's: the caller threads the SAME set through the primary and secondary
+ * calls, so a command already declined under one lookup key is not offered
+ * again under the other.
+ */
 function runForLookupKey(
   dispatcher: DocumentDispatcher,
   lookupKey: string,
   origin: Element,
   path: readonly Element[],
   originalEvent: KeyboardEvent,
+  seen: Set<string>,
 ): ClaimResult | null {
   const originIsTextbox = isTextbox(origin as HTMLElement);
 
@@ -932,12 +985,11 @@ function runForLookupKey(
   candidates.sort(
     (a, b) =>
       a.scopeDepth - b.scopeDepth || // ASC: lower index = deeper = first
-      b.store.depth - a.store.depth || // DESC: deeper store level first
+      storeDepth(b.store) - storeDepth(a.store) || // DESC: deeper store level first
       b.id - a.id, // DESC: last registered first
   );
 
   // Run in rank order, each command name at most once per event.
-  const seen = new Set<string>();
   for (const candidate of candidates) {
     const seenKey =
       candidate.name !== undefined
@@ -1021,9 +1073,26 @@ function handleKeyDown(dispatcher: DocumentDispatcher, event: KeyboardEvent) {
 
   const path = buildFocusPath(origin);
 
-  let claim = runForLookupKey(dispatcher, lookup.primary, origin, path, event);
+  // Shared across both calls below: a command that already declined for the
+  // primary lookup key must not get a second turn under the secondary one.
+  const seen = new Set<string>();
+  let claim = runForLookupKey(
+    dispatcher,
+    lookup.primary,
+    origin,
+    path,
+    event,
+    seen,
+  );
   if (!claim && lookup.secondary) {
-    claim = runForLookupKey(dispatcher, lookup.secondary, origin, path, event);
+    claim = runForLookupKey(
+      dispatcher,
+      lookup.secondary,
+      origin,
+      path,
+      event,
+      seen,
+    );
   }
 
   if (claim) {
@@ -1082,10 +1151,11 @@ export function createShortcutStore(
     keys: props.keys ?? {},
   };
 
-  // Fixed at creation: whether `platform` resolved from an app-supplied
-  // answer rather than from `getShortcutPlatform()`'s guess. See
-  // `isPlatformExplicit` below.
-  const platformExplicit =
+  // Whether `platform` resolved from an app-supplied answer rather than
+  // from `getShortcutPlatform()`'s guess. Set here from construction, and
+  // can also latch true later through markPlatformExplicit(); see both
+  // below.
+  let platformExplicit =
     props.platform !== undefined ||
     (fixedParent?.isPlatformExplicit() ?? false);
 
@@ -1138,7 +1208,6 @@ export function createShortcutStore(
     uid: nextStoreUid++,
     parent: fixedParent,
     children: new Set(),
-    depth: fixedParent ? fixedParent.depth + 1 : 0,
     registrations,
     keyIndex,
     nameIndex,
@@ -1150,11 +1219,13 @@ export function createShortcutStore(
     registerCommand,
     registerScope,
     getKeys,
+    getDeclaredKeys,
     setKeys,
     trigger,
     runOnTrigger,
     getAvailability,
     isPlatformExplicit,
+    markPlatformExplicit,
     attach,
     formatKeys,
     attachParent,
@@ -1295,14 +1366,18 @@ export function createShortcutStore(
     };
   }
 
-  function getKeys(command: string): string[] {
+  function getDeclaredKeys(command: string): string | null | undefined {
     const state = shortcut.getState();
     const hasOverride = Object.hasOwn(state.keys, command);
-    const declared = hasOverride
-      ? state.keys[command]
-      : mergedCache.get(command)?.keys;
+    return hasOverride ? state.keys[command] : mergedCache.get(command)?.keys;
+  }
+
+  function getKeys(command: string): string[] {
+    const declared = getDeclaredKeys(command);
     if (declared == null) return [];
-    return resolveKeys(declared, state.platform).map((r) => r.text);
+    return resolveKeys(declared, shortcut.getState().platform).map(
+      (r) => r.text,
+    );
   }
 
   function setKeys(command: string, keys: string | null | undefined) {
@@ -1374,6 +1449,15 @@ export function createShortcutStore(
     return platformExplicit;
   }
 
+  // One-way, deliberately: unmounting the level that called this does not
+  // unmark it. Nothing resets the store's own `platform` value back to
+  // auto-detection either, so a permanent latch keeps this describing the
+  // same thing that value's own persistence already implies, rather than a
+  // scoped flag going stale against a value that outlives it.
+  function markPlatformExplicit(): void {
+    platformExplicit = true;
+  }
+
   function attachParent(parent: ShortcutStore): () => void {
     const nextParent = asInternal(parent);
 
@@ -1381,12 +1465,10 @@ export function createShortcutStore(
     detachAttachedParent?.();
 
     const previousParent = store.parent;
-    const previousDepth = store.depth;
     const previousState = shortcut.getState();
 
     attachedParent = nextParent;
     store.parent = nextParent;
-    store.depth = nextParent.depth + 1;
 
     const cleanups: Array<() => void> = [
       sync(nextParent, ["enabled"], recomputeEnabled),
@@ -1408,7 +1490,6 @@ export function createShortcutStore(
       for (const cleanup of cleanups) cleanup();
       attachedParent = undefined;
       store.parent = previousParent;
-      store.depth = previousDepth;
       recomputeEnabled();
       for (const key of ["platform", "glyphs", "keyNames"] as const) {
         if (props[key] !== undefined) continue;

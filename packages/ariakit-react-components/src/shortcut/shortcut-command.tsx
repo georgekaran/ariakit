@@ -1,5 +1,4 @@
 import type {
-  ShortcutAvailability,
   ShortcutClickEvent,
   ShortcutEvent,
   ShortcutScopeHandle,
@@ -38,6 +37,8 @@ import type { ShortcutStore } from "./shortcut-store.ts";
 import {
   resolveCommandScope,
   resolveScopeElement,
+  useShortcutAvailability,
+  useShortcutDeclaredKeys,
   useShortcutKeys,
   useShortcutPlatform,
 } from "./shortcut-store.ts";
@@ -50,13 +51,11 @@ type HTMLType = HTMLElementTagNameMap[TagName];
 // depends on resolvedKeys, so a fresh array each render would defeat it.
 const NO_KEYS: string[] = [];
 
-// runOnTrigger and getAvailability are not part of ShortcutStore's public
-// type: the click bridge's own entry point, and the by-name read a pure
-// reference uses for its own rendered availability, but every store this
-// package builds still carries both at runtime.
+// runOnTrigger is not part of ShortcutStore's public type: the click
+// bridge's own entry point, but every store this package builds still
+// carries it at runtime.
 interface StoreInternals {
   runOnTrigger: (command: string, event: ShortcutEvent) => boolean;
-  getAvailability: (command: string) => ShortcutAvailability;
 }
 
 /**
@@ -213,38 +212,44 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
       enabledInTextbox,
     ]);
 
-    // The command's effective `enabled` is the store's own effective value
-    // (already ANDed with every ancestor) ANDed with this registration's
-    // own. A pure reference instead displays its command's merged
-    // availability, from whichever registration actually declared it.
+    // A registration's own `enabled` always governs that registration: a
+    // disabled one never advertises, activates on click, or activates from
+    // the keyboard, whether it declares anything or is a pure reference. A
+    // pure reference additionally borrows its command's merged enabled, from
+    // whichever registration actually declared it, but only as
+    // *availability* — whether the command could run at all, not whether
+    // this element gets to run it. Both have to hold.
     const storeEnabled = useStoreState(store, "enabled");
+    // Reused for `inScope` below too: useShortcutAvailability already
+    // tracks focus, plus, through a narrowly-scoped MutationObserver,
+    // `aria-activedescendant` moving on a composite widget without DOM
+    // focus moving with it. Calling it here rides that same tracking
+    // instead of adding a second observer that could drift from it. An
+    // unnamed registration has no name to key it by, so it passes an empty
+    // one and only relies on the resulting re-render, not the value.
+    const availability = useShortcutAvailability({
+      command: referenceCommand ?? "",
+      store,
+    });
     const enabled =
       referenceCommand !== undefined
-        ? storeInternals.getAvailability(referenceCommand).enabled
+        ? ownEnabled && availability.enabled
         : storeEnabled && ownEnabled;
 
-    // Hidden while the command's region is not focused, tracked through a
-    // document-level focusin/focusout pair so a focus change anywhere is
-    // seen, including portalled descendants outside this element's
-    // subtree. A pure reference again defers to its command's merged
-    // scope instead of the scope enclosing this element.
+    // Hidden while the command's region is not focused. A pure reference
+    // again defers to its command's merged scope instead of the scope
+    // enclosing this element. Recomputed every render, the same as
+    // elementDisabled above, so the re-render useShortcutAvailability
+    // forces on a relevant focus or aria-activedescendant change always
+    // lands a fresh value.
     const [inScope, setInScope] = useState(true);
     useSafeLayoutEffect(() => {
-      const update = () => {
-        setInScope(
-          referenceCommand !== undefined
-            ? storeInternals.getAvailability(referenceCommand).inScope
-            : isInScope(resolvedScope, scopeContext),
-        );
-      };
-      update();
-      document.addEventListener("focusin", update, true);
-      document.addEventListener("focusout", update, true);
-      return () => {
-        document.removeEventListener("focusin", update, true);
-        document.removeEventListener("focusout", update, true);
-      };
-    }, [referenceCommand, storeInternals, resolvedScope, scopeContext]);
+      setInScope(
+        referenceCommand !== undefined
+          ? availability.inScope
+          : isInScope(resolvedScope, scopeContext),
+      );
+    });
 
     // Emit exactly one shortcut into aria-keyshortcuts. NVDA splits the
     // platform shortcut property on TWO spaces, while ARIA specifies one, so
@@ -253,6 +258,12 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     // Stays silent until `platform` settles; see useShortcutPlatform.
     const settled = useShortcutPlatform(store);
     const namedKeys = useShortcutKeys({ command: command ?? "", store });
+    // The same by-name read, one step before platform resolution, so a
+    // nested Shortcut can resolve it for a platform of its own.
+    const namedDeclaredKeys = useShortcutDeclaredKeys({
+      command: command ?? "",
+      store,
+    });
     // An unnamed command has no override to apply, since there is no name
     // to key one by, so its declared `keys` is resolved directly.
     const declaredKeys = useMemo(
@@ -292,15 +303,36 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     // Independent of scope: out-of-scope is not disabled.
     const ariaKeyShortcuts = enabled ? first : undefined;
 
+    // Mirrors resolvedKeys's own ladder, one step earlier: the raw
+    // declaration a nested Shortcut can resolve for a platform of its own,
+    // instead of text already resolved for this store's platform. Not
+    // gated on `settled`: unlike resolvedKeys, nothing here depends on
+    // platform, only on whether the registry has an answer yet.
+    const rawDeclaredKeys = command
+      ? registered
+        ? namedDeclaredKeys
+        : override !== undefined
+          ? override
+          : keys
+      : keys;
+
     const commandContextValue = useMemo(
       () => ({
         command,
         keys: resolvedKeys,
+        declaredKeys: rawDeclaredKeys,
         enabled,
         inScope,
         hasAriaKeyShortcuts: !!ariaKeyShortcuts,
       }),
-      [command, resolvedKeys, enabled, inScope, ariaKeyShortcuts],
+      [
+        command,
+        resolvedKeys,
+        rawDeclaredKeys,
+        enabled,
+        inScope,
+        ariaKeyShortcuts,
+      ],
     );
 
     props = useWrapElement(

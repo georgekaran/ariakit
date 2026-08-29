@@ -767,6 +767,28 @@ test("the second lookup key runs when the first matches nothing", () => {
   expect(ran).toEqual(["help"]);
 });
 
+test("a declining command bound to both lookup keys runs once per event", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      command: "help",
+      keys: "Shift+? ?",
+      onTrigger: () => {
+        ran.push("run");
+        return false;
+      },
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "?", shiftKey: true, bubbles: true }),
+  );
+  // "Shift+? ?" indexes this command under both lookup keys the event
+  // produces. Declining must count once for the whole event, not once per
+  // lookup key, or the primary and secondary passes each give it a turn.
+  expect(ran.length).toBe(1);
+});
+
 test("the activation bridge carries no modifiers", () => {
   const store = createShortcutStore();
   const link = document.createElement("a");
@@ -1022,6 +1044,68 @@ test("attaching to a parent already in the store's own chain is refused", () => 
   // would make grandparent its own ancestor, so it must be a no-op.
   expect(grandparent.getState().enabled).toBe(true);
   parent.setEnabled(true);
+});
+
+test("descendants keep correct relative depth after their parent is adopted", () => {
+  const outer = createShortcutStore();
+  const inner = createShortcutStore({ parent: outer });
+  const elsewhereRoot = createShortcutStore();
+  const elsewhereMid = createShortcutStore({ parent: elsewhereRoot });
+  const ran: string[] = [];
+  track(
+    outer.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("outer"),
+    }),
+  );
+  track(
+    inner.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("inner"),
+    }),
+  );
+  const detach = asInternal(outer).attachParent(elsewhereMid);
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  // `outer` moved two levels deeper, but `inner` is still nested one level
+  // inside it. A depth cached at `inner`'s own construction would leave
+  // `outer` outranking its own child here.
+  expect(ran).toEqual(["inner"]);
+  detach();
+});
+
+test("detaching restores descendant depths", () => {
+  const outer = createShortcutStore();
+  const elsewhereRoot = createShortcutStore();
+  const elsewhereMid = createShortcutStore({ parent: elsewhereRoot });
+  // A stable reference at depth 2, unrelated to `outer`'s own attachment.
+  const competitor = createShortcutStore({ parent: elsewhereMid });
+  const detachOuter = asInternal(outer).attachParent(elsewhereMid);
+  // `inner` is constructed while `outer` sits two levels deep.
+  const inner = createShortcutStore({ parent: outer });
+  detachOuter();
+  const ran: string[] = [];
+  track(
+    inner.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("inner"),
+    }),
+  );
+  track(
+    competitor.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("competitor"),
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  // Once `outer` detaches, it is back at the root, so `inner` is one level
+  // deep, shallower than `competitor`'s stable depth of two. A depth still
+  // stuck at what `inner` inherited while `outer` was attached would wrongly
+  // let it outrank `competitor` here.
+  expect(ran).toEqual(["competitor"]);
 });
 
 /* ---------------------------------------------------------------------- *

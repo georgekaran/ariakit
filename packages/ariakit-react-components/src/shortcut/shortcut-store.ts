@@ -38,15 +38,34 @@ export function resolveCommandScope(
   };
 }
 
+// A stable, empty stand-in for `props`: passed to useStoreProps in place of
+// the real props whenever a store is on its way out (see `isOutgoing`
+// below), so every key it reads comes back unset and the sync effect each
+// call owns no-ops instead of writing into that store.
+const NO_STORE_PROPS: ShortcutStoreProps = {};
+
 export function useShortcutStoreProps<T extends Core.ShortcutStore>(
   store: T,
   update: () => void,
   props: ShortcutStoreProps,
 ) {
   useUpdateEffect(update, [props.store]);
-  useStoreProps(store, props, "platform");
-  useStoreProps(store, props, "glyphs");
-  useStoreProps(store, props, "keyNames");
+
+  // Between the render where `store` prop changes to a new store and the
+  // one where `update` above finishes swapping it in, `store` here is
+  // still the outgoing one while `props` already describes the incoming
+  // one. Every sync below is only for the store `props` currently names,
+  // so an outgoing store is left exactly as it was. Compared by `getState`
+  // identity, not `===`: useStore wraps the store in a new object on every
+  // render, so `store` itself never matches `props.store` by reference
+  // even when it is the very store adoption is naming, while `getState`
+  // stays whichever core store it was originally taken from.
+  const isOutgoing =
+    props.store !== undefined && props.store.getState !== store.getState;
+  const ownProps = isOutgoing ? NO_STORE_PROPS : props;
+  useStoreProps(store, ownProps, "platform");
+  useStoreProps(store, ownProps, "glyphs");
+  useStoreProps(store, ownProps, "keyNames");
 
   // An adopted store keeps whatever `parent` it had, or didn't, when it was
   // first created: createShortcutStore, which would have wired this level's
@@ -66,6 +85,7 @@ export function useShortcutStoreProps<T extends Core.ShortcutStore>(
 
   const { enabled } = props;
   useSafeLayoutEffect(() => {
+    if (isOutgoing) return;
     if (enabled === undefined) return;
     store.setEnabled(enabled);
   });
@@ -82,6 +102,7 @@ export function useShortcutStoreProps<T extends Core.ShortcutStore>(
     keys: Record<string, string | null>;
   } | null>(null);
   useSafeLayoutEffect(() => {
+    if (isOutgoing) return;
     if (keys === undefined) return;
     const applied =
       appliedKeysRef.current?.store === store
@@ -105,10 +126,25 @@ export function useShortcutStoreProps<T extends Core.ShortcutStore>(
 // The command registry, key index and name index live in private closures,
 // never reactive state, so createStore's usual state-sync merge would leave
 // them empty. Adopting `store` outright is what makes registration work.
+//
+// A fresh store reads `props.platform` at construction, so an explicit
+// prop there already settles isPlatformExplicit() before anything renders.
+// Adoption skips construction entirely, and the same prop would otherwise
+// reach the store only through a layout effect, too late for a server
+// render to see it. Applying it here instead, once, keeps both paths
+// equally deterministic from the very first render.
 function createOrAdoptShortcutStore(
   props: Core.ShortcutStoreProps,
 ): Core.ShortcutStore {
-  if (props.store) return props.store;
+  if (props.store) {
+    if (props.platform !== undefined) {
+      props.store.setState("platform", props.platform);
+      (
+        props.store as unknown as Core.ShortcutStoreInternalFunctions
+      ).markPlatformExplicit();
+    }
+    return props.store;
+  }
   return Core.createShortcutStore(props);
 }
 
@@ -256,6 +292,44 @@ export function useShortcutKeys(options: {
     cacheRef.current = next;
     return next;
   });
+}
+
+/**
+ * @internal Reactive counterpart of `store.getDeclaredKeys()`: a command's
+ * raw declared `keys` by name, after any override but before a platform
+ * picks a winner among its alternatives. `useShortcutKeys` hands back text
+ * already resolved for the store's own platform, which a `platform` prop
+ * overriding that can no longer recover the alternative from; `<Shortcut>`
+ * reads this instead and resolves it for whichever platform it was asked
+ * to render.
+ * @example
+ * const declared = useShortcutDeclaredKeys({ command: "save" }); // "mod+S"
+ */
+export function useShortcutDeclaredKeys(options: {
+  command: string;
+  store?: ShortcutStore;
+}): string | null | undefined {
+  const context = useShortcutContext();
+  const store = options.store ?? context;
+  const { command } = options;
+
+  // Mirrors useShortcutKeys's own registry subscription: registerCommand
+  // mutates the registry outside reactive state, so a registration
+  // elsewhere never touches "keys" on its own.
+  const [, forceUpdate] = useState(0);
+  useSafeLayoutEffect(() => {
+    return Core.subscribeToShortcutRegistry(store, () => {
+      forceUpdate((tick) => tick + 1);
+    });
+  }, [store]);
+
+  // Not "platform": the whole point is the text before a platform picks a
+  // winner, so a platform change alone must not re-render this.
+  return useStoreState(store, ["keys"], () =>
+    (store as unknown as Core.ShortcutStoreInternalFunctions).getDeclaredKeys(
+      command,
+    ),
+  );
 }
 
 /**
