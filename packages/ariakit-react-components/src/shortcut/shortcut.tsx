@@ -3,8 +3,8 @@ import type {
   ShortcutKeyNames,
 } from "@ariakit/components/shortcut/glyphs";
 import { getGlyph, getKeyName } from "@ariakit/components/shortcut/glyphs";
-import type { ShortcutPlatform } from "@ariakit/components/shortcut/utils";
-import { resolveKeys } from "@ariakit/components/shortcut/utils";
+import type { ShortcutPlatform } from "@ariakit/components/shortcut/shortcut-store";
+import { resolveKeys } from "@ariakit/components/shortcut/shortcut-store";
 import { useStoreState } from "@ariakit/react-store";
 import { createElement, createHook, forwardRef } from "@ariakit/react-utils";
 import type { Options, Props } from "@ariakit/react-utils";

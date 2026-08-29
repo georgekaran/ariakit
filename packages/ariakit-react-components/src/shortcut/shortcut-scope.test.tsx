@@ -1,6 +1,6 @@
 import { createShortcutStore } from "@ariakit/components/shortcut/shortcut-store";
 import { useStoreState } from "@ariakit/react-store";
-import { press, render, waitFor } from "@ariakit/test/react";
+import { press, render, sleep, waitFor } from "@ariakit/test/react";
 import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { afterEach, expect, test } from "vitest";
@@ -190,4 +190,148 @@ test("useShortcutAvailability updates when a command is registered later", async
   await waitFor(() => {
     expect(el.textContent).toBe("true");
   });
+});
+
+test("availability updates when aria-activedescendant moves", async () => {
+  const { store } = instrumentStore();
+
+  const combobox = document.createElement("input");
+  const region = document.createElement("div");
+  const option = document.createElement("div");
+  option.id = "option-a";
+  region.append(option);
+  document.body.append(combobox, region);
+
+  const unregisterScope = store.registerScope({ element: region });
+  const unregisterCommand = store.registerCommand({
+    command: "select",
+    keys: "Control+K",
+    scope: region,
+    onTrigger: () => {},
+  });
+
+  function Availability() {
+    const { inScope } = useShortcutAvailability({ command: "select", store });
+    return <span data-testid="in-scope">{String(inScope)}</span>;
+  }
+
+  const result = await render(<Availability />);
+  unmount = result.unmount;
+
+  const label = document.querySelector('[data-testid="in-scope"]')!;
+
+  // Real focus lands on the combobox, outside the scoped region, the way a
+  // Combobox, Select or Menu keeps it while aria-activedescendant reports
+  // the virtually focused option. Settling here, rather than asserting
+  // through `waitFor`, drains any update this transition itself scheduled,
+  // so it can't land late and be mistaken for the one under test below.
+  combobox.focus();
+  await sleep();
+  expect(label.textContent).toBe("false");
+
+  // DOM focus never moves again from here: only the attribute does.
+  combobox.setAttribute("aria-activedescendant", "option-a");
+
+  await waitFor(() => {
+    expect(label.textContent).toBe("true");
+  });
+
+  unregisterCommand();
+  unregisterScope();
+  combobox.remove();
+  region.remove();
+});
+
+test("an adopted store created disabled stays disabled", async () => {
+  const adopted = createShortcutStore({ enabled: false });
+
+  const result = await render(
+    <ShortcutProvider>
+      <ShortcutProvider store={adopted} />
+    </ShortcutProvider>,
+  );
+  unmount = result.unmount;
+
+  expect(adopted.getState().enabled).toBe(false);
+});
+
+test("detaching a provider restores the adopted store's own enabled", async () => {
+  const adopted = createShortcutStore();
+
+  const result = await render(
+    <ShortcutProvider enabled={false}>
+      <ShortcutProvider store={adopted} />
+    </ShortcutProvider>,
+  );
+  unmount = result.unmount;
+
+  expect(adopted.getState().enabled).toBe(false);
+
+  unmount();
+  unmount = undefined;
+
+  expect(adopted.getState().enabled).toBe(true);
+});
+
+test("a nested adopted level shadows an outer one", async () => {
+  const adopted = createShortcutStore();
+  const ran: string[] = [];
+
+  const result = await render(
+    <ShortcutProvider>
+      <ShortcutCommand
+        keys="Control+K"
+        onTrigger={() => {
+          ran.push("outer");
+        }}
+      />
+      <ShortcutProvider store={adopted}>
+        <ShortcutCommand
+          keys="Control+K"
+          onTrigger={() => {
+            ran.push("inner");
+          }}
+        />
+      </ShortcutProvider>
+    </ShortcutProvider>,
+  );
+  unmount = result.unmount;
+
+  await press("k", document.body, { ctrlKey: true });
+  expect(ran).toEqual(["inner"]);
+});
+
+test("an adopted store inherits platform from the chain", async () => {
+  const adopted = createShortcutStore();
+
+  const result = await render(
+    <ShortcutProvider platform="apple">
+      <ShortcutProvider store={adopted} />
+    </ShortcutProvider>,
+  );
+  unmount = result.unmount;
+
+  expect(adopted.getState().platform).toBe("apple");
+});
+
+test("replacing the store prop applies the keys map to the new store", async () => {
+  const storeA = createShortcutStore();
+  const storeB = createShortcutStore();
+
+  const result = await render(
+    <ShortcutProvider store={storeA} keys={{ save: "Control+Shift+S" }}>
+      <ShortcutCommand command="save" keys="Control+S" onTrigger={() => {}} />
+    </ShortcutProvider>,
+  );
+  unmount = result.unmount;
+
+  expect(storeA.getKeys("save")).toEqual(["Control+Shift+S"]);
+
+  await result.rerender(
+    <ShortcutProvider store={storeB} keys={{ save: "Control+Shift+S" }}>
+      <ShortcutCommand command="save" keys="Control+S" onTrigger={() => {}} />
+    </ShortcutProvider>,
+  );
+
+  expect(storeB.getKeys("save")).toEqual(["Control+Shift+S"]);
 });

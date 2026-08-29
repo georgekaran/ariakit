@@ -235,6 +235,66 @@ test("several references under one name emit no duplicate-declaration warning", 
   warn.mockRestore();
 });
 
+test("a disabled declaration's handler does not run through an enabled reference", () => {
+  const store = createShortcutStore();
+  const ran: string[] = [];
+  const button = document.createElement("button");
+  document.body.append(button);
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => ran.push("disabled-handler"),
+      enabled: false,
+    }),
+  );
+  track(store.registerCommand({ command: "save", element: button }));
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true }),
+  );
+  // The reference is enabled, but the declaration owning `onTrigger` is
+  // not: the keyboard must not run its handler through the reference.
+  expect(ran).toEqual([]);
+  button.remove();
+});
+
+test("dispatch, trigger and getAvailability agree about a disabled declaration", () => {
+  const store = createShortcutStore();
+  let runs = 0;
+  const button = document.createElement("button");
+  document.body.append(button);
+  track(
+    store.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => {
+        runs += 1;
+      },
+      enabled: false,
+    }),
+  );
+  track(store.registerCommand({ command: "save", element: button }));
+
+  const available = asInternal(store).getAvailability("save").enabled;
+
+  const triggered = store.trigger("save");
+  const ranViaTrigger = runs > 0;
+  runs = 0;
+
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true }),
+  );
+  const ranViaDispatch = runs > 0;
+
+  // Compared against each other, not against a hardcoded value: whichever
+  // way this command's availability changes later, these three may never
+  // disagree about it again.
+  expect(triggered).toBe(available);
+  expect(ranViaTrigger).toBe(available);
+  expect(ranViaDispatch).toBe(available);
+  button.remove();
+});
+
 test("unregistering removes exactly one registration", () => {
   const store = createShortcutStore();
   const un = store.registerCommand({ command: "save", keys: "Control+S" });
@@ -908,6 +968,63 @@ test("an unmounted store stops following its parent", () => {
 });
 
 /* ---------------------------------------------------------------------- *
+ * attachParent — joins an already-created store to a parent chain for a
+ * bounded period, for adopting a store built outside React.
+ * ---------------------------------------------------------------------- */
+
+test("attaching a parent preserves the store's own enabled", () => {
+  const parent = createShortcutStore();
+  const store = createShortcutStore({ enabled: false });
+  const detach = asInternal(store).attachParent(parent);
+  // The parent is enabled, but the store's own `enabled: false` still wins.
+  expect(store.getState().enabled).toBe(false);
+  // The own value stays live, not frozen at attach time.
+  store.setEnabled(true);
+  expect(store.getState().enabled).toBe(true);
+  detach();
+});
+
+test("detaching restores the previous state", () => {
+  const parent = createShortcutStore();
+  const store = createShortcutStore();
+  const detach = asInternal(store).attachParent(parent);
+  parent.setEnabled(false);
+  expect(store.getState().enabled).toBe(false);
+  detach();
+  // Not frozen at whatever the chain last said: the store's own enabled,
+  // never itself touched, is what comes back.
+  expect(store.getState().enabled).toBe(true);
+  // The parent can no longer reach it once detached.
+  parent.setEnabled(true);
+  parent.setEnabled(false);
+  expect(store.getState().enabled).toBe(true);
+});
+
+test("an attached store inherits platform until it detaches", () => {
+  const parent = createShortcutStore({ platform: "apple" });
+  const store = createShortcutStore();
+  const before = store.getState().platform;
+  const detach = asInternal(store).attachParent(parent);
+  expect(store.getState().platform).toBe("apple");
+  detach();
+  expect(store.getState().platform).toBe(before);
+  // No longer tracking: a later parent change must not reach it.
+  parent.setState("platform", "windows");
+  expect(store.getState().platform).toBe(before);
+});
+
+test("attaching to a parent already in the store's own chain is refused", () => {
+  const grandparent = createShortcutStore();
+  const parent = createShortcutStore({ parent: grandparent });
+  asInternal(grandparent).attachParent(parent);
+  parent.setEnabled(false);
+  // `parent` is already grandparent's own descendant; honoring this call
+  // would make grandparent its own ancestor, so it must be a no-op.
+  expect(grandparent.getState().enabled).toBe(true);
+  parent.setEnabled(true);
+});
+
+/* ---------------------------------------------------------------------- *
  * runOnTrigger — the click bridge's by-name entry point. Never touches an
  * element, unlike trigger().
  * ---------------------------------------------------------------------- */
@@ -1190,4 +1307,66 @@ test("availability follows aria-activedescendant like dispatch does", () => {
 
   combobox.remove();
   region.remove();
+});
+
+test("availability finds the focused element inside an open shadow root", () => {
+  const store = createShortcutStore();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = host.attachShadow({ mode: "open" });
+  const inner = document.createElement("input");
+  root.append(inner);
+  track(
+    store.registerCommand({
+      command: "shadow-scoped",
+      keys: "Control+K",
+      scope: inner,
+      onTrigger: () => {},
+    }),
+  );
+  expect(asInternal(store).getAvailability("shadow-scoped").inScope).toBe(
+    false,
+  );
+  inner.focus();
+  // document.activeElement is `host`, the shadow HOST: without descending
+  // into the open shadow root, this would still read false.
+  expect(asInternal(store).getAvailability("shadow-scoped").inScope).toBe(true);
+  inner.blur();
+  host.remove();
+});
+
+test("availability and dispatch agree about a shadow-root origin", () => {
+  const store = createShortcutStore();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = host.attachShadow({ mode: "open" });
+  const inner = document.createElement("input");
+  root.append(inner);
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      command: "shadow-scoped",
+      keys: "Control+K",
+      scope: inner,
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  inner.focus();
+
+  const available = asInternal(store).getAvailability("shadow-scoped").inScope;
+
+  inner.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  const dispatchRanIt = ran.length > 0;
+
+  // Compared against each other, not a hardcoded expectation: whichever way
+  // this resolves, the two may never disagree.
+  expect(available).toBe(dispatchRanIt);
+  host.remove();
 });

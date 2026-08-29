@@ -29,6 +29,10 @@ function ariaKeyShortcuts(element: HTMLElement) {
   return element.getAttribute("aria-keyshortcuts");
 }
 
+function hasInScope(element: HTMLElement) {
+  return element.hasAttribute("data-in-scope");
+}
+
 test("a declaration in one place and a reference in another both work", async () => {
   const onTrigger = vi.fn();
 
@@ -92,6 +96,30 @@ test("a reference in another scope emits no duplicate-declaration warning", asyn
 
   expect(warn).not.toHaveBeenCalled();
   warn.mockRestore();
+});
+
+test("a cross-scope reference shows its command's availability, not its own scope", async () => {
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutScope>
+        <ShortcutCommand command="save" keys="Control+S" onTrigger={() => {}}>
+          Save
+        </ShortcutCommand>
+        <input aria-label="inside a" />
+      </ShortcutScope>
+      <ShortcutScope>
+        <ShortcutCommand command="save">Save reference</ShortcutCommand>
+      </ShortcutScope>
+    </ShortcutProvider>,
+  );
+
+  const reference = q.button.ensure("Save reference");
+  await focus(q.textbox.ensure("inside a"));
+
+  // Scope A, where the declaration lives, now contains focus. The
+  // reference sits in Scope B, which stays unfocused, but must still
+  // report in scope: its command is available, its own region is not.
+  await waitFor(() => expect(hasInScope(reference)).toBe(true));
 });
 
 test("a headless command inherits the enclosing scope", async () => {
@@ -206,6 +234,26 @@ test("aria-keyshortcuts disappears when enabled is false", async () => {
   );
 
   expect(ariaKeyShortcuts(q.button.ensure("Save"))).toBe(null);
+});
+
+test("a reference does not advertise a command whose declaration is disabled", async () => {
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutCommand
+        command="save"
+        keys="Control+S"
+        onTrigger={() => {}}
+        enabled={false}
+      >
+        Save
+      </ShortcutCommand>
+      <ShortcutCommand command="save">Save reference</ShortcutCommand>
+    </ShortcutProvider>,
+  );
+
+  // The reference itself is not disabled, but the declaration is: it must
+  // not advertise a shortcut its command cannot currently run.
+  expect(ariaKeyShortcuts(q.button.ensure("Save reference"))).toBe(null);
 });
 
 test("a command inside a disabled fieldset drops aria-keyshortcuts", async () => {

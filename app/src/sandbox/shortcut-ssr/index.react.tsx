@@ -16,16 +16,22 @@ export interface SsrShortcutProps {
    * instead of being read straight off this render's own `keys` prop.
    */
   command?: string;
+  /**
+   * The provider's remapping, by command name. A string rebinds; `null`
+   * unbinds.
+   */
+  providerKeys?: Record<string, string | null>;
 }
 
 export function SsrShortcut({
   platform,
   keys = "apple:Meta+B",
   command,
+  providerKeys,
 }: SsrShortcutProps = {}) {
   const [clicks, setClicks] = useState(0);
   return (
-    <ShortcutProvider platform={platform}>
+    <ShortcutProvider platform={platform} keys={providerKeys}>
       <ShortcutCommand
         command={command}
         keys={keys}

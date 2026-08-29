@@ -50,35 +50,43 @@ export function useShortcutStoreProps<T extends Core.ShortcutStore>(
 
   // An adopted store keeps whatever `parent` it had, or didn't, when it was
   // first created: createShortcutStore, which would have wired this level's
-  // own enclosing chain into it, never ran for it. Relaying the chain's
-  // effective `enabled` here is what makes disabling an outer level still
-  // disable it. A freshly created store needs none of this: its own `parent`
-  // already does the job.
+  // own enclosing chain into it, never ran for it. attachParent joins it to
+  // this level's chain instead, on mount and whenever the store or the chain
+  // parent changes, so enabled/depth/platform/glyphs/keyNames all follow it
+  // the way construction would have. A freshly created store needs none of
+  // this: its own `parent` already does the job.
   const contextParent = useShortcutContext();
   const chainParent = props.store ? (props.parent ?? contextParent) : undefined;
-  const chainParentEnabled = useStoreState(chainParent, "enabled");
+  useSafeLayoutEffect(() => {
+    if (!chainParent) return;
+    return (
+      store as unknown as Core.ShortcutStoreInternalFunctions
+    ).attachParent(chainParent);
+  }, [store, chainParent]);
 
-  // Not a plain setState: setEnabled ANDs this with the parent's value.
   const { enabled } = props;
   useSafeLayoutEffect(() => {
-    if (chainParent) {
-      store.setEnabled((enabled ?? true) && (chainParentEnabled ?? true));
-      return;
-    }
     if (enabled === undefined) return;
     store.setEnabled(enabled);
   });
 
   // Not one setState of the whole map: that leaves the dispatch index stale.
-  // Starts empty, never seeded from `keys`: an adopted store's own state
-  // never carried the initial map (createShortcutStore, which would have,
-  // never ran), so the first run below has to apply every entry itself
-  // rather than assume it's already there.
+  // Keyed to the store it was applied to, not just to this hook call: a
+  // store that just replaced another in the `store` prop starts from
+  // nothing applied, the same as a freshly adopted store whose own state
+  // never carried the initial map, so the first run below applies every
+  // entry itself rather than trust another store's bookkeeping.
   const { keys } = props;
-  const appliedKeysRef = useRef<Record<string, string | null>>({});
+  const appliedKeysRef = useRef<{
+    store: T;
+    keys: Record<string, string | null>;
+  } | null>(null);
   useSafeLayoutEffect(() => {
     if (keys === undefined) return;
-    const applied = appliedKeysRef.current;
+    const applied =
+      appliedKeysRef.current?.store === store
+        ? appliedKeysRef.current.keys
+        : {};
     const commands = new Set([...Object.keys(applied), ...Object.keys(keys)]);
     for (const command of commands) {
       const prev = Object.hasOwn(applied, command)
@@ -88,7 +96,7 @@ export function useShortcutStoreProps<T extends Core.ShortcutStore>(
       if (prev === next) continue;
       store.setKeys(command, next);
     }
-    appliedKeysRef.current = { ...keys };
+    appliedKeysRef.current = { store, keys: { ...keys } };
   });
 
   return store;
@@ -160,7 +168,7 @@ export function useShortcutStore(
  * ```
  */
 export function useShortcutCommand(
-  options: Omit<Core.ShortcutCommandOptions, "store"> & {
+  options: Omit<Core.ShortcutCommandOptions, "store" | "element"> & {
     store?: ShortcutStore;
   },
 ) {
@@ -175,7 +183,6 @@ export function useShortcutCommand(
     scope,
     enabled,
     enabledInTextbox,
-    element,
   } = options;
   const isDeclaration =
     keys !== undefined ||
@@ -196,7 +203,6 @@ export function useShortcutCommand(
       scope: resolvedScope,
       enabled,
       enabledInTextbox,
-      element,
     });
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -208,7 +214,6 @@ export function useShortcutCommand(
     resolvedScope,
     enabled,
     enabledInTextbox,
-    element,
   ]);
 }
 
@@ -281,8 +286,9 @@ export function useShortcutPlatform(store: ShortcutStore): boolean {
 
 /**
  * Reactive counterpart of `store.getAvailability()`. Re-resolves when the
- * store's effective `enabled` changes and whenever focus moves anywhere in
- * the document, since `inScope` depends on live focus containment.
+ * store's effective `enabled` changes, whenever focus moves anywhere in the
+ * document, and whenever the focused element's `aria-activedescendant`
+ * changes, since `inScope` depends on live focus containment.
  * @see https://ariakit.com/components/shortcut
  * @example
  * const { enabled, inScope } = useShortcutAvailability({ command: "save" });
@@ -297,17 +303,41 @@ export function useShortcutAvailability(options: {
 
   // inScope depends on live DOM focus, not store state, so a focus change
   // alone has to force a re-render here, the same document-level pair
-  // ShortcutCommand's own inScope tracking relies on.
+  // ShortcutCommand's own inScope tracking relies on. A virtual-focus
+  // Combobox, Select or Menu moves aria-activedescendant while DOM focus
+  // stays on the composite widget, so no focus event ever fires for it; a
+  // MutationObserver on the focused element itself is what catches that.
   const [, forceUpdate] = useState(0);
   useSafeLayoutEffect(() => {
     const update = () => {
       forceUpdate((tick) => tick + 1);
     };
-    document.addEventListener("focusin", update, true);
-    document.addEventListener("focusout", update, true);
+
+    let observer: MutationObserver | null = null;
+    const retarget = () => {
+      observer?.disconnect();
+      observer = null;
+      const active = Core.resolveActiveElement();
+      if (!active) return;
+      observer = new MutationObserver(update);
+      observer.observe(active, {
+        attributes: true,
+        attributeFilter: ["aria-activedescendant"],
+      });
+    };
+
+    const handleFocusChange = () => {
+      update();
+      retarget();
+    };
+
+    retarget();
+    document.addEventListener("focusin", handleFocusChange, true);
+    document.addEventListener("focusout", handleFocusChange, true);
     return () => {
-      document.removeEventListener("focusin", update, true);
-      document.removeEventListener("focusout", update, true);
+      document.removeEventListener("focusin", handleFocusChange, true);
+      document.removeEventListener("focusout", handleFocusChange, true);
+      observer?.disconnect();
     };
   }, []);
 

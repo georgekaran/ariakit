@@ -123,3 +123,37 @@ test("a named command with an explicit platform renders keys on the server", asy
     },
   );
 });
+
+test("a provider keys override wins over the local declaration on the server", async () => {
+  await renderAndHydrate(
+    createElement<SsrShortcutProps>(SsrShortcut, {
+      platform: "apple",
+      command: "save",
+      keys: "mod+S",
+      providerKeys: { save: "mod+J" },
+    }),
+    (container) => {
+      const button = container.querySelector("button");
+      expect(button).toHaveAttribute("aria-keyshortcuts", "Meta+J");
+      expect(
+        container.querySelectorAll("kbd[data-key]").length,
+      ).toBeGreaterThan(0);
+    },
+  );
+});
+
+test("a provider keys null unbinds a command on the server", async () => {
+  await renderAndHydrate(
+    createElement<SsrShortcutProps>(SsrShortcut, {
+      platform: "apple",
+      command: "save",
+      keys: "mod+S",
+      providerKeys: { save: null },
+    }),
+    (container) => {
+      const button = container.querySelector("button");
+      expect(button).not.toHaveAttribute("aria-keyshortcuts");
+      expect(container.querySelectorAll("kbd[data-key]")).toHaveLength(0);
+    },
+  );
+});

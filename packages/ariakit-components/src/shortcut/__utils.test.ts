@@ -4,7 +4,7 @@ import {
   getEventLookupKeys,
   isShortcutClickEvent,
   resolveKeys,
-} from "./utils.ts";
+} from "./__utils.ts";
 
 test("resolves platform-specific shortcuts", () => {
   expect(resolveKeys("apple:Meta+R pc:control+r", "apple")).toEqual([

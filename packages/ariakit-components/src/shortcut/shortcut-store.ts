@@ -2,20 +2,51 @@ import { batch, createStore, setup, sync } from "@ariakit/store";
 import type { Store, StoreProps } from "@ariakit/store";
 import { canUseDOM, isElement, isTextbox } from "@ariakit/utils";
 import type { BooleanOrCallback } from "@ariakit/utils";
-import type {
-  ShortcutFormatOptions,
-  ShortcutGlyphs,
-  ShortcutKeyNames,
-} from "./glyphs.ts";
-import { formatKeys as formatKeysWith } from "./glyphs.ts";
-import type { ShortcutPlatform } from "./utils.ts";
+import type { ShortcutPlatform } from "./__utils.ts";
 import {
   fireShortcutClickEvent,
   getEventLookupKeys,
   getShortcutPlatform,
   isShortcutElementEnabled,
   resolveKeys,
-} from "./utils.ts";
+} from "./__utils.ts";
+import type {
+  ShortcutFormatOptions,
+  ShortcutGlyphs,
+  ShortcutKeyNames,
+} from "./glyphs.ts";
+import { formatKeys as formatKeysWith } from "./glyphs.ts";
+
+/**
+ * The platform a shortcut is displayed and detected for. Re-exported here,
+ * not `@internal`: `@ariakit/react-components`'s own `platform` prop is
+ * typed with it, so stripping it would leave that prop unresolvable for a
+ * consumer.
+ */
+export type { ShortcutPlatform } from "./__utils.ts";
+
+/**
+ * @internal Resolves a `keys` declaration into the canonical shortcuts that
+ * exist on a platform. Kept here only because `@ariakit/react-components`
+ * calls it directly to render `aria-keyshortcuts` and glyphs ahead of
+ * registration, the same way this module's own dispatch indexing does.
+ */
+export { resolveKeys } from "./__utils.ts";
+
+/**
+ * @internal Normalizes a keydown event into this store's own lookup keys.
+ * Kept here only because `ShortcutInput` calls it directly to build its own
+ * recorder the same way this module's own dispatcher does, which is what
+ * lets `ShortcutInput` exist instead of every consumer reimplementing it.
+ */
+export { getEventLookupKeys } from "./__utils.ts";
+
+/**
+ * @internal Whether a click was dispatched by `fireShortcutClickEvent`. Kept
+ * here only because `ShortcutCommand`'s own click bridge calls it directly
+ * to avoid re-triggering a command the keyboard already ran.
+ */
+export { isShortcutClickEvent } from "./__utils.ts";
 
 function warn(...args: unknown[]) {
   if (process.env.NODE_ENV !== "production") {
@@ -164,10 +195,12 @@ interface MergedCommand {
   /**
    * NOT a merge of every registration's `enabled`: it is the `enabled` of
    * whichever registration owns `onTrigger` above (`true` when none does).
-   * Meaningful only while that owner exists: `trigger()`, `runOnTrigger()`
-   * and `getAvailability()` read it for that case, and fall back to the
-   * reference elements themselves otherwise. Dispatch never reads this
-   * field; it checks each candidate registration's own `enabled` directly.
+   * Meaningful only while that owner exists: `trigger()`, `runOnTrigger()`,
+   * `getAvailability()` and dispatch all refuse the whole command when this
+   * is false, rather than falling back to a reference. Only when no owner
+   * exists do they fall back to the reference elements themselves. Dispatch
+   * additionally checks each candidate registration's own `enabled`, to
+   * filter which reference is even a candidate in the first place.
    */
   enabled: boolean;
   enabledInTextbox?: BooleanOrCallback<ShortcutEvent>;
@@ -351,6 +384,24 @@ export interface ShortcutStoreInternalFunctions {
    * store.isPlatformExplicit(); // false unless `platform` was passed
    */
   isPlatformExplicit: () => boolean;
+  /**
+   * @internal Joins this store to `parent`'s chain for a bounded period,
+   * for a framework binding that adopts a store built outside React into
+   * whatever provider chain it lands under. While attached, `enabled` is
+   * this store's own value ANDed with the chain's, without touching the
+   * own value itself; `depth` ranks it one level inside `parent`; and
+   * `platform`/`glyphs`/`keyNames` inherit from `parent` for whichever of
+   * the three were not pinned by an explicit prop at construction. The
+   * returned function detaches, restoring exactly what the store had
+   * before this call.
+   *
+   * Calling this again before detaching swaps the chain cleanly: the
+   * previous attachment is torn down first, so the store is never linked
+   * to two chains at once. A parent that already sits in this store's own
+   * chain is refused outright, returning a no-op cleanup, since honoring
+   * it would make the store its own ancestor.
+   */
+  attachParent: (parent: ShortcutStore) => () => void;
 }
 
 /** @internal The concrete shape every store built by this module actually has. */
@@ -371,6 +422,22 @@ interface ShortcutStoreInternal
 
 function asInternal(store: ShortcutStore): ShortcutStoreInternal {
   return store as ShortcutStoreInternal;
+}
+
+// Walks `store`'s own chain (attachParent's, else the fixed one) looking for
+// a level with `uid`, by id rather than identity: `store` itself may be a
+// framework binding's copy of the level `uid` was read from. Used only to
+// refuse an attach that would make a store its own ancestor.
+function chainIncludes(
+  store: ShortcutStoreInternal | undefined,
+  uid: number,
+): boolean {
+  let current = store;
+  while (current) {
+    if (current.uid === uid) return true;
+    current = current.parent;
+  }
+  return false;
 }
 
 /*
@@ -471,11 +538,29 @@ function resolveFocusOrigin(event: KeyboardEvent): Element | null {
   return resolveActiveDescendant(origin);
 }
 
+/**
+ * @internal The element genuinely focused right now, descended through any
+ * OPEN shadow root: plain `document.activeElement` stops at the shadow
+ * host. This is the same node `getAvailability`'s own origin resolution
+ * starts from, so a framework binding's focus tracking never watches a
+ * different one. A closed root's `shadowRoot` is null, so the walk stops
+ * there instead of throwing.
+ * @example
+ * resolveActiveElement()?.getAttribute("aria-activedescendant");
+ */
+export function resolveActiveElement(): Element | null {
+  if (!canUseDOM) return null;
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
+  return active;
+}
+
 // The activeElement analog of `resolveFocusOrigin`, for a caller with no
 // event to read `composedPath` from.
 function resolveActiveElementOrigin(): Element | null {
-  if (!canUseDOM) return null;
-  const active = document.activeElement;
+  const active = resolveActiveElement();
   if (!active) return null;
   return resolveActiveDescendant(active);
 }
@@ -572,8 +657,10 @@ function resolveScopeDepth(
 // last-registration-wins, would let one disabled reference, or simply the
 // last one to mount, switch off the entire command, and would warn on every
 // extra reference as a false conflict. Dispatch reads each candidate's own
-// `enabled` instead (see `runForLookupKey`); `trigger`/`runOnTrigger` read
-// the declaration's own `enabled`, tracked below alongside `onTrigger`.
+// `enabled` to filter references (see `runForLookupKey`), then separately
+// reads the declaration's own, tracked below alongside `onTrigger`, before
+// running it: the same value `trigger()`, `runOnTrigger()` and
+// `getAvailability()` also read.
 const DECLARATION_FIELDS = [
   "keys",
   "onTrigger",
@@ -799,8 +886,9 @@ function runForLookupKey(
       const merged = getMergedFor(store, registration);
       if (!merged) continue;
 
-      // Drop filters, cheapest first. `enabled` is evaluated per
-      // registration, never the merged declaration.
+      // Drop filters, cheapest first. This is each candidate's own
+      // `enabled`, never the merged declaration's; that one gates running
+      // `onTrigger`, later, once a candidate is picked.
       if (registration.enabled === false) continue;
       if (registration.element !== undefined) {
         const element = resolveElement(registration.element);
@@ -859,37 +947,29 @@ function runForLookupKey(
     seen.add(seenKey);
 
     const merged = candidate.merged;
+    const shortcutEvent = buildKeyboardEvent(
+      candidate.name,
+      lookupKey,
+      origin,
+      originalEvent,
+    );
     let ran = true;
     let result: unknown;
-    let shortcutEvent: ShortcutEvent;
-    if (merged.onTrigger) {
-      shortcutEvent = buildKeyboardEvent(
-        candidate.name,
-        lookupKey,
-        origin,
-        originalEvent,
-      );
+    if (!merged.enabled) {
+      // The declaration owning `onTrigger` is disabled: the whole command
+      // sits out this key, the same refusal trigger() and getAvailability()
+      // already give, rather than falling back to clicking a reference.
+      ran = false;
+    } else if (merged.onTrigger) {
       result = merged.onTrigger(shortcutEvent);
     } else {
       const element = pickHighestRankedReference(merged);
       if (!element) {
         ran = false;
-        shortcutEvent = buildKeyboardEvent(
-          candidate.name,
-          lookupKey,
-          origin,
-          originalEvent,
-        );
       } else {
         // NO modifiers. The Cmd in keys="mod+O" belongs to the binding.
         fireShortcutClickEvent(element);
         result = undefined;
-        shortcutEvent = buildKeyboardEvent(
-          candidate.name,
-          lookupKey,
-          origin,
-          originalEvent,
-        );
       }
     }
     if (!ran) continue;
@@ -980,8 +1060,12 @@ let nextStoreUid = 0;
 export function createShortcutStore(
   props: ShortcutStoreProps = {},
 ): ShortcutStore {
-  const parent = props.parent ? asInternal(props.parent) : undefined;
-  const parentState = parent?.getState();
+  // The level captured once at construction, from `props.parent`. Renamed
+  // from `parent` because `attachParent` below adds a second, swappable
+  // one: `enabled`, and the platform/glyphs/keyNames sync, prefer that one
+  // over this one for as long as it is attached.
+  const fixedParent = props.parent ? asInternal(props.parent) : undefined;
+  const fixedParentState = fixedParent?.getState();
 
   // DO NOT write createStore(initialState, props.parent). The `stores`
   // argument of createStore force-syncs every shared key in BOTH
@@ -990,10 +1074,11 @@ export function createShortcutStore(
   let ownEnabled = props.enabled ?? true;
 
   const initialState: ShortcutStoreState = {
-    enabled: ownEnabled && (parentState?.enabled ?? true),
-    platform: props.platform ?? parentState?.platform ?? getShortcutPlatform(),
-    glyphs: props.glyphs ?? parentState?.glyphs ?? {},
-    keyNames: props.keyNames ?? parentState?.keyNames ?? {},
+    enabled: ownEnabled && (fixedParentState?.enabled ?? true),
+    platform:
+      props.platform ?? fixedParentState?.platform ?? getShortcutPlatform(),
+    glyphs: props.glyphs ?? fixedParentState?.glyphs ?? {},
+    keyNames: props.keyNames ?? fixedParentState?.keyNames ?? {},
     keys: props.keys ?? {},
   };
 
@@ -1001,21 +1086,32 @@ export function createShortcutStore(
   // answer rather than from `getShortcutPlatform()`'s guess. See
   // `isPlatformExplicit` below.
   const platformExplicit =
-    props.platform !== undefined || (parent?.isPlatformExplicit() ?? false);
+    props.platform !== undefined ||
+    (fixedParent?.isPlatformExplicit() ?? false);
 
   // Omit an undefined parent so createStore keeps its zero-parent fast path.
   const shortcut = props.store
     ? createStore(initialState, props.store)
     : createStore(initialState);
 
-  const syncEnabled = () => {
-    const parentEnabled = parent ? parent.getState().enabled : true;
-    shortcut.setState("enabled", ownEnabled && parentEnabled);
-  };
+  // The chain currently backing `enabled`: whatever `attachParent` last
+  // attached, else the fixed one from construction, else no chain at all.
+  // Re-reading it fresh on every call is what lets a `setEnabled` mid
+  // attachment, and an attach/detach either side of one, always agree.
+  let attachedParent: ShortcutStoreInternal | undefined;
+  // The live attachment's own detach, if any, so a second attachParent call
+  // can tear the first one down before wiring the next.
+  let detachAttachedParent: (() => void) | undefined;
+
+  function recomputeEnabled() {
+    const chain = attachedParent ?? fixedParent;
+    const chainEnabled = chain ? chain.getState().enabled : true;
+    shortcut.setState("enabled", ownEnabled && chainEnabled);
+  }
 
   function setEnabled(enabled: boolean) {
     ownEnabled = enabled;
-    syncEnabled();
+    recomputeEnabled();
   }
 
   const registrations = new Map<number, Registration>();
@@ -1040,9 +1136,9 @@ export function createShortcutStore(
   const store: ShortcutStoreInternal = {
     ...shortcut,
     uid: nextStoreUid++,
-    parent,
+    parent: fixedParent,
     children: new Set(),
-    depth: parent ? parent.depth + 1 : 0,
+    depth: fixedParent ? fixedParent.depth + 1 : 0,
     registrations,
     keyIndex,
     nameIndex,
@@ -1061,6 +1157,7 @@ export function createShortcutStore(
     isPlatformExplicit,
     attach,
     formatKeys,
+    attachParent,
   };
 
   // wireUp() must be re-entrant, not one-shot: it runs eagerly at
@@ -1073,16 +1170,19 @@ export function createShortcutStore(
 
   function wireUp() {
     const cleanups: Array<() => void> = [];
-    if (parent) {
-      parent.children.add(store);
+    if (fixedParent) {
+      fixedParent.children.add(store);
       // One-way. The parent must never learn about this level's own setting.
-      cleanups.push(sync(parent, ["enabled"], syncEnabled));
+      cleanups.push(sync(fixedParent, ["enabled"], recomputeEnabled));
       // Only when the prop was NOT explicitly provided. An explicit prop
       // pins the value and must not be overwritten by a later parent change.
+      // Also skipped while `attachedParent` holds the chain instead: it
+      // takes over inheritance for as long as it is attached.
       for (const key of ["platform", "glyphs", "keyNames"] as const) {
         if (props[key] !== undefined) continue;
         cleanups.push(
-          sync(parent, [key], (state) => {
+          sync(fixedParent, [key], (state) => {
+            if (attachedParent) return;
             shortcut.setState(key, state[key]);
             if (key === "platform") reindexAll(store);
           }),
@@ -1098,7 +1198,7 @@ export function createShortcutStore(
     );
     return () => {
       for (const cleanup of cleanups) cleanup();
-      parent?.children.delete(store);
+      fixedParent?.children.delete(store);
     };
   }
 
@@ -1272,6 +1372,53 @@ export function createShortcutStore(
 
   function isPlatformExplicit(): boolean {
     return platformExplicit;
+  }
+
+  function attachParent(parent: ShortcutStore): () => void {
+    const nextParent = asInternal(parent);
+
+    if (chainIncludes(nextParent, store.uid)) return () => {};
+    detachAttachedParent?.();
+
+    const previousParent = store.parent;
+    const previousDepth = store.depth;
+    const previousState = shortcut.getState();
+
+    attachedParent = nextParent;
+    store.parent = nextParent;
+    store.depth = nextParent.depth + 1;
+
+    const cleanups: Array<() => void> = [
+      sync(nextParent, ["enabled"], recomputeEnabled),
+    ];
+    for (const key of ["platform", "glyphs", "keyNames"] as const) {
+      if (props[key] !== undefined) continue;
+      cleanups.push(
+        sync(nextParent, [key], (state) => {
+          shortcut.setState(key, state[key]);
+          if (key === "platform") reindexAll(store);
+        }),
+      );
+    }
+
+    let detached = false;
+    const detach = () => {
+      if (detached) return;
+      detached = true;
+      for (const cleanup of cleanups) cleanup();
+      attachedParent = undefined;
+      store.parent = previousParent;
+      store.depth = previousDepth;
+      recomputeEnabled();
+      for (const key of ["platform", "glyphs", "keyNames"] as const) {
+        if (props[key] !== undefined) continue;
+        shortcut.setState(key, previousState[key]);
+        if (key === "platform") reindexAll(store);
+      }
+      detachAttachedParent = undefined;
+    };
+    detachAttachedParent = detach;
+    return detach;
   }
 
   // Mirrors dispatch's own origin and scope resolution

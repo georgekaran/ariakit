@@ -44,7 +44,6 @@
     "./select/select-store": "./src/select/select-store.ts",
     "./shortcut/glyphs": "./src/shortcut/glyphs.ts",
     "./shortcut/shortcut-store": "./src/shortcut/shortcut-store.ts",
-    "./shortcut/utils": "./src/shortcut/utils.ts",
     "./tab/tab-store": "./src/tab/tab-store.ts",
     "./tag/tag-store": "./src/tag/tag-store.ts",
     "./toolbar/toolbar-store": "./src/toolbar/toolbar-store.ts",

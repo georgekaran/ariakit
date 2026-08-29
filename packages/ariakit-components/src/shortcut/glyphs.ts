@@ -1,5 +1,5 @@
-import type { ShortcutPlatform } from "./utils.ts";
-import { getShortcutPlatform, resolveKeys } from "./utils.ts";
+import type { ShortcutPlatform } from "./__utils.ts";
+import { getShortcutPlatform, resolveKeys } from "./__utils.ts";
 
 /**
  * Per-platform glyph overrides, keyed by the canonical key name `Meta`,
