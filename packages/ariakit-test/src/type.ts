@@ -75,7 +75,15 @@ export function type(
       // Keydown may move focus; continue typing at the new active element.
       element = getActiveElement(element) || element;
 
-      if (isTextField(element)) {
+      // A held Ctrl or Meta turns a printable key into a command chord,
+      // which types nothing on a real keyboard. Alt is excluded: on Apple
+      // keyboards it's a character layer, so an Alt-modified key still types
+      // a character.
+      const { ctrlKey, metaKey } = options as KeyboardEventInit;
+      const isPrintableChar = char !== "\x7f" && char !== "\b";
+      const suppressInsertion = isPrintableChar && !!(ctrlKey || metaKey);
+
+      if (isTextField(element) && !suppressInsertion) {
         const input = element as DirtiableElement & TextField;
         const [start, end] = [
           input.selectionStart ?? 0,

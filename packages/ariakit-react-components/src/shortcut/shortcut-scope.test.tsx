@@ -1,6 +1,6 @@
 import { createShortcutStore } from "@ariakit/components/shortcut/shortcut-store";
 import { useStoreState } from "@ariakit/react-store";
-import { press, render, sleep, waitFor } from "@ariakit/test/react";
+import { focus, press, render, sleep, waitFor } from "@ariakit/test/react";
 import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { afterEach, expect, test } from "vitest";
@@ -9,6 +9,7 @@ import { ShortcutProvider } from "./shortcut-provider.tsx";
 import { ShortcutScope } from "./shortcut-scope.tsx";
 import { useShortcutAvailability, useShortcutKeys } from "./shortcut-store.ts";
 import type { ShortcutStore } from "./shortcut-store.ts";
+import { Shortcut } from "./shortcut.tsx";
 
 let unmount: (() => void) | undefined;
 
@@ -92,6 +93,115 @@ test("a portalled nested scope is inside its parent region", async () => {
   // Plain DOM containment fails here (the portalled scope is not a
   // descendant of the outer one); the scope tree is what links it.
   expect(ran).toEqual(["outer-command"]);
+});
+
+test("data-in-scope agrees with dispatch for a portalled child scope", async () => {
+  const ran: string[] = [];
+  function App() {
+    return (
+      <ShortcutScope>
+        <ShortcutCommand
+          command="save"
+          keys="Control+S"
+          onTrigger={() => ran.push("outer-command")}
+        >
+          Save
+        </ShortcutCommand>
+        {createPortal(
+          <ShortcutScope>
+            <input data-testid="inner" />
+          </ShortcutScope>,
+          document.body,
+        )}
+      </ShortcutScope>
+    );
+  }
+  const result = await render(<App />);
+  unmount = result.unmount;
+
+  const save = document.querySelector("button")!;
+  const input = document.querySelector('[data-testid="inner"]') as HTMLElement;
+
+  // No explicit `scope`: the command inherits the enclosing ShortcutScope
+  // from context, the common shape for a declaring ShortcutCommand.
+  // Dispatch already resolves this through the scope registry; the
+  // rendered attribute must agree with it instead of falling back to
+  // plain DOM containment, which the portal fails.
+  await focus(input);
+  await waitFor(() => expect(save.hasAttribute("data-in-scope")).toBe(true));
+
+  await press("s", input, { ctrlKey: true });
+  expect(ran).toEqual(["outer-command"]);
+});
+
+test("a nested hint is visible when its command is in a portalled child scope", async () => {
+  function App() {
+    return (
+      <ShortcutScope>
+        <ShortcutCommand command="save" keys="Control+S" onTrigger={() => {}}>
+          Save <Shortcut />
+        </ShortcutCommand>
+        {createPortal(
+          <ShortcutScope>
+            <input data-testid="inner" />
+          </ShortcutScope>,
+          document.body,
+        )}
+      </ShortcutScope>
+    );
+  }
+  const result = await render(<App />);
+  unmount = result.unmount;
+
+  const hint = document.querySelector("kbd")!;
+  const input = document.querySelector('[data-testid="inner"]') as HTMLElement;
+
+  // The hint reads the enclosing ShortcutCommand's own inScope through
+  // ShortcutCommandContext, so it inherits the same bug and the same fix.
+  await focus(input);
+  await waitFor(() => expect(hint.style.visibility).not.toBe("hidden"));
+});
+
+test("an explicit element scope still uses plain containment for display", async () => {
+  function App() {
+    const outerRef = useRef<HTMLDivElement>(null);
+    return (
+      <>
+        <div ref={outerRef}>
+          <ShortcutCommand
+            command="save"
+            keys="Control+S"
+            scope={outerRef}
+            onTrigger={() => {}}
+          >
+            Save
+          </ShortcutCommand>
+          <input data-testid="inside" />
+        </div>
+        {createPortal(<input data-testid="portalled" />, document.body)}
+      </>
+    );
+  }
+  const result = await render(<App />);
+  unmount = result.unmount;
+
+  const save = document.querySelector("button")!;
+  const inside = document.querySelector(
+    '[data-testid="inside"]',
+  ) as HTMLElement;
+  const portalled = document.querySelector(
+    '[data-testid="portalled"]',
+  ) as HTMLElement;
+
+  // `outerRef` was never handed to a ShortcutScope, so registerScope never
+  // links it to anything: only a scope rendered by ShortcutScope builds a
+  // region, so this stays plain containment and the unrelated portal must
+  // not count as inside it.
+  await focus(portalled);
+  await waitFor(() => expect(save.hasAttribute("data-in-scope")).toBe(false));
+
+  await focus(inside);
+  await waitFor(() => expect(save.hasAttribute("data-in-scope")).toBe(true));
 });
 
 test("a supplied store is disabled by its enclosing provider", async () => {

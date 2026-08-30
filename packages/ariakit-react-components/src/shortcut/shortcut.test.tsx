@@ -1,6 +1,9 @@
 import { formatKeys } from "@ariakit/components/shortcut/glyphs";
 import { createShortcutStore } from "@ariakit/components/shortcut/shortcut-store";
 import { focus, q, render, waitFor } from "@ariakit/test/react";
+// This package's own tsconfig does not include the root vitest.setup.ts
+// that registers this matcher at runtime, so its types need importing here.
+import "@testing-library/jest-dom/vitest";
 import { afterEach, expect, test } from "vitest";
 import { ShortcutCommand } from "./shortcut-command.tsx";
 import { ShortcutProvider } from "./shortcut-provider.tsx";
@@ -26,6 +29,39 @@ function outerKbd() {
   return element as HTMLElement;
 }
 
+function textNodes(root: Element) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    nodes.push(node as Text);
+  }
+  return nodes;
+}
+
+// Whether the given node sits inside a subtree hidden from assistive
+// technology, checked from the node up through, and including, root.
+function hasAriaHiddenAncestor(node: Node, root: Element) {
+  let current =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as Element)
+      : node.parentElement;
+  while (current) {
+    if (current.getAttribute("aria-hidden") === "true") return true;
+    if (current === root) return false;
+    current = current.parentElement;
+  }
+  return false;
+}
+
+// The text a screen reader gets from root's content: every text node that
+// is not inside an aria-hidden subtree, concatenated in DOM order.
+function readableText(root: Element) {
+  return textNodes(root)
+    .filter((node) => !hasAriaHiddenAncestor(node, root))
+    .map((node) => node.textContent ?? "")
+    .join("");
+}
+
 test('renders nested kbd with data-key, and the outer kbd carries dir="ltr"', async () => {
   await renderTree(
     <ShortcutProvider platform="apple">
@@ -44,7 +80,7 @@ test('renders nested kbd with data-key, and the outer kbd carries dir="ltr"', as
   ]);
 });
 
-test("glyph spans are aria-hidden, and a spoken name renders as visually hidden text", async () => {
+test("glyph spans are aria-hidden only where a spoken name replaces them, and the spoken name renders as visually hidden text", async () => {
   await renderTree(
     <ShortcutProvider platform="apple">
       <Shortcut keys="mod+shift+A" />
@@ -53,12 +89,65 @@ test("glyph spans are aria-hidden, and a spoken name renders as visually hidden 
 
   const outer = outerKbd();
   const spans = [...outer.querySelectorAll("span[aria-hidden]")];
-  expect(spans.length).toBe(3);
   // Apple's Shift glyph is ⇧; NVDA has no entry for it, so Ariakit ships a
-  // spoken name ("Shift") next to the glyph.
+  // spoken name ("Shift") next to the glyph, and only that glyph is hidden.
+  // Meta and A have no spoken name, so their own glyphs stay readable.
+  expect(spans.length).toBe(1);
   const shiftKbd = outer.querySelector('kbd[data-key="shift"]');
   expect(shiftKbd?.querySelector("span[aria-hidden]")?.textContent).toBe("⇧");
   expect(shiftKbd?.textContent).toBe("⇧Shift");
+});
+
+test("a standalone hint has an accessible name", async () => {
+  await renderTree(
+    <ShortcutProvider platform="windows">
+      <Shortcut keys="Control+S" />
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  // kbd carries the generic role, which the accname spec excludes from
+  // name-from-content, so toHaveAccessibleName does not apply to a
+  // standalone hint; assert directly on what text a screen reader gets.
+  const nodes = textNodes(outer);
+  expect(readableText(outer).length).toBeGreaterThan(0);
+  expect(nodes.every((node) => hasAriaHiddenAncestor(node, outer))).toBe(false);
+});
+
+test("a key with a spoken name keeps its glyph hidden and its name readable", async () => {
+  await renderTree(
+    <ShortcutProvider platform="apple">
+      <Shortcut keys="mod+shift+A" />
+    </ShortcutProvider>,
+  );
+
+  const outer = outerKbd();
+  const shiftKbd = outer.querySelector('kbd[data-key="shift"]');
+  if (!shiftKbd) throw new Error("No shift kbd found");
+
+  const glyph = shiftKbd.querySelector("span[aria-hidden]");
+  if (!glyph) throw new Error("No hidden glyph span found");
+  expect(glyph.getAttribute("aria-hidden")).toBe("true");
+  expect(glyph.textContent).toBe("⇧");
+  expect(hasAriaHiddenAncestor(glyph, shiftKbd)).toBe(true);
+
+  expect(readableText(shiftKbd)).toBe("Shift");
+});
+
+test("a hint inside a command carrying aria-keyshortcuts stays hidden from the accessible name", async () => {
+  await renderTree(
+    <ShortcutProvider>
+      <ShortcutCommand command="save" keys="Control+S" onTrigger={() => {}}>
+        Save <Shortcut />
+      </ShortcutCommand>
+    </ShortcutProvider>,
+  );
+
+  const button = q.button.ensure();
+  expect(button.getAttribute("aria-keyshortcuts")).toBe("Control+S");
+  // button supports name-from-content, so this reflects exactly what a
+  // screen reader announces: the hint must not double up on the attribute.
+  expect(button).toHaveAccessibleName("Save");
 });
 
 test("glyphs from the provider reach a nested Shortcut", async () => {

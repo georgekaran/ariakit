@@ -1,7 +1,6 @@
 import type {
   ShortcutClickEvent,
   ShortcutEvent,
-  ShortcutScopeHandle,
   ShortcutScopeRef,
 } from "@ariakit/components/shortcut/shortcut-store";
 import {
@@ -19,11 +18,7 @@ import {
   useWrapElement,
 } from "@ariakit/react-utils";
 import type { Options, Props } from "@ariakit/react-utils";
-import {
-  disabledFromElement,
-  disabledFromProps,
-  hasFocusWithin,
-} from "@ariakit/utils";
+import { disabledFromElement, disabledFromProps } from "@ariakit/utils";
 import type { BooleanOrCallback } from "@ariakit/utils";
 import type { ElementType, MouseEvent as ReactMouseEvent } from "react";
 import { useContext, useMemo, useRef, useState } from "react";
@@ -36,7 +31,6 @@ import {
 import type { ShortcutStore } from "./shortcut-store.ts";
 import {
   resolveCommandScope,
-  resolveScopeElement,
   useShortcutAvailability,
   useShortcutDeclaredKeys,
   useShortcutKeys,
@@ -51,51 +45,16 @@ type HTMLType = HTMLElementTagNameMap[TagName];
 // depends on resolvedKeys, so a fresh array each render would defeat it.
 const NO_KEYS: string[] = [];
 
-// runOnTrigger is not part of ShortcutStore's public type: the click
-// bridge's own entry point, but every store this package builds still
-// carries it at runtime.
+// Neither member is part of ShortcutStore's public type: the click
+// bridge's own entry point, and the registry-aware scope check the
+// rendered `inScope` below reuses instead of walking focus containment
+// itself, so it can never disagree with dispatch. Every store this
+// package builds still carries both at runtime.
 interface StoreInternals {
   runOnTrigger: (command: string, event: ShortcutEvent) => boolean;
-}
-
-/**
- * Whether the given scope handle's region (its own element, plus the
- * elements of every child scope registered under it) currently contains
- * focus. Not `Node.contains`: a portalled child's element need not be a
- * DOM descendant of its parent's.
- */
-function isScopeHandleFocused(handle: ShortcutScopeHandle): boolean {
-  const own = resolveScopeElement(handle.element);
-  if (own && hasFocusWithin(own)) return true;
-  for (const child of handle.children) {
-    if (isScopeHandleFocused(child)) return true;
-  }
-  return false;
-}
-
-/** An explicit scope ref is tested by plain containment. */
-function isRefFocused(ref: ShortcutScopeRef): boolean {
-  const element = "current" in ref ? ref.current : ref;
-  if (!element) return false;
-  return hasFocusWithin(element);
-}
-
-/**
- * Resolves a command's `scope` option into whether its region currently
- * contains focus. A command with no region at all (`null`, or `undefined`
- * with no enclosing `ShortcutScope`) is always in scope.
- */
-function isInScope(
-  scope: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
-  scopeContext: ShortcutScopeHandle | undefined,
-): boolean {
-  if (scope === null) return true;
-  if (scope === undefined) {
-    if (!scopeContext) return true;
-    return isScopeHandleFocused(scopeContext);
-  }
-  const refs = Array.isArray(scope) ? scope : [scope];
-  return refs.some(isRefFocused);
+  isScopeFocused: (
+    scope: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
+  ) => boolean;
 }
 
 /**
@@ -220,6 +179,12 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     // *availability* — whether the command could run at all, not whether
     // this element gets to run it. Both have to hold.
     const storeEnabled = useStoreState(store, "enabled");
+    // Hoisted above `availability`: a pure reference's own provisional
+    // availability below needs the provider's override map before its
+    // registration lands, and the keys ladder further down needs it either
+    // way.
+    const keyOverrides = useStoreState(store, "keys");
+    const override = command ? keyOverrides[command] : undefined;
     // Reused for `inScope` below too: useShortcutAvailability already
     // tracks focus, plus, through a narrowly-scoped MutationObserver,
     // `aria-activedescendant` moving on a composite widget without DOM
@@ -231,9 +196,18 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
       command: referenceCommand ?? "",
       store,
     });
+    // Before its own registration lands, a pure reference has nothing in
+    // the registry to confirm availability from, the same gap resolvedKeys
+    // below works around. The provider's override map is itself a
+    // deterministic answer, so a reference bound through it counts as
+    // available immediately; once registered, the registry becomes
+    // authoritative again and this stops contributing, so a declaration
+    // that turns out genuinely disabled still wins.
+    const providerBound =
+      referenceCommand !== undefined && !registered && override != null;
     const enabled =
       referenceCommand !== undefined
-        ? ownEnabled && availability.enabled
+        ? ownEnabled && (availability.enabled || providerBound)
         : storeEnabled && ownEnabled;
 
     // Hidden while the command's region is not focused. A pure reference
@@ -247,7 +221,7 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
       setInScope(
         referenceCommand !== undefined
           ? availability.inScope
-          : isInScope(resolvedScope, scopeContext),
+          : storeInternals.isScopeFocused(resolvedScope),
       );
     });
 
@@ -273,9 +247,7 @@ const useShortcutCommandProps = createHook<TagName, ShortcutCommandOptions>(
     // The provider's remapping for this name, read straight off the store's
     // own reactive state rather than the registry, so it is available
     // before registration too. `undefined` means no override; `null` means
-    // unbound.
-    const keyOverrides = useStoreState(store, "keys");
-    const override = command ? keyOverrides[command] : undefined;
+    // unbound. Hoisted above, alongside `availability`; see there.
     const overrideKeys = useMemo(
       () =>
         override ? resolveKeys(override, platform).map((r) => r.text) : [],

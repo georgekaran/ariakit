@@ -37,7 +37,7 @@ test("dispatch.keyDown preserves provided keyboard strings", async () => {
   }
 });
 
-test("press uses an empty string for omitted keyboard code", async () => {
+test("press leaves the keyboard code empty for a key with no US-layout mapping", async () => {
   const button = document.createElement("button");
   document.body.append(button);
   let key: string | undefined;
@@ -47,9 +47,41 @@ test("press uses an empty string for omitted keyboard code", async () => {
     code = event.code;
   });
   try {
-    await press("m", button);
-    expect(key).toBe("m");
+    // A Cyrillic letter has no obvious key on a US keyboard, unlike "m" below.
+    await press("ф", button);
+    expect(key).toBe("ф");
     expect(code).toBe("");
+  } finally {
+    button.remove();
+  }
+});
+
+test("an omitted code is derived from the key", async () => {
+  const button = document.createElement("button");
+  document.body.append(button);
+  let code: string | undefined;
+  button.addEventListener("keydown", (event) => {
+    code = event.code;
+  });
+  try {
+    await dispatch.keyDown(button, { key: "a" });
+    expect(code).toBe("KeyA");
+  } finally {
+    button.remove();
+  }
+});
+
+test("an explicit code is preserved", async () => {
+  const button = document.createElement("button");
+  document.body.append(button);
+  let code: string | undefined;
+  button.addEventListener("keydown", (event) => {
+    code = event.code;
+  });
+  try {
+    // "a" would derive to "KeyA"; the explicit code overrides that.
+    await dispatch.keyDown(button, { key: "a", code: "IntlBackslash" });
+    expect(code).toBe("IntlBackslash");
   } finally {
     button.remove();
   }

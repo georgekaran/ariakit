@@ -259,6 +259,55 @@ test("a reference does not advertise a command whose declaration is disabled", a
   expect(ariaKeyShortcuts(q.button.ensure("Save reference"))).toBe(null);
 });
 
+test("a provider-bound reference may flash available for one commit before a disabled declaration corrects it, but never paints that way", async () => {
+  // Before either registration lands, nothing in the registry can confirm
+  // "save"'s availability, so providerBound (see shortcut-command.tsx)
+  // optimistically renders a reference bound through the provider's keys
+  // map as available. When a separate declaration for the same command is
+  // genuinely disabled, that optimism is briefly wrong: this reference's
+  // own registration has not landed yet (!registered), so providerBound
+  // still wins for one commit, until the declaration's own registration
+  // effect corrects the merged cache. Accepted rather than closed: both
+  // the wrong and the corrected value are computed inside
+  // useLayoutEffect-driven renders, which React flushes to completion
+  // before the browser paints, so no real user, or any assertion after
+  // render() settles, ever observes the wrong one; only a MutationObserver,
+  // which records synchronous DOM writes React never actually shows,
+  // proves it happened at all.
+  const records: (string | null)[] = [];
+  const observer = new MutationObserver((list) => {
+    for (const record of list) records.push(record.oldValue);
+  });
+  observer.observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["aria-keyshortcuts"],
+    attributeOldValue: true,
+  });
+
+  await renderTree(
+    <ShortcutProvider platform="apple" keys={{ save: "Control+S" }}>
+      <ShortcutCommand
+        command="save"
+        keys="Control+S"
+        onTrigger={() => {}}
+        enabled={false}
+      >
+        Save
+      </ShortcutCommand>
+      <ShortcutCommand command="save">Save reference</ShortcutCommand>
+    </ShortcutProvider>,
+  );
+
+  await sleep();
+  observer.disconnect();
+
+  // The known, accepted flash: never anything other than the override's
+  // own keys, and always corrected by the time anything can act on it.
+  expect(records).toContain("Control+S");
+  expect(ariaKeyShortcuts(q.button.ensure("Save reference"))).toBe(null);
+});
+
 test("a disabled reference does not advertise or activate its command", async () => {
   const declared = vi.fn();
   const referenced = vi.fn();

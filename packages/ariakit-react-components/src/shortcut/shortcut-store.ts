@@ -16,12 +16,13 @@ export function resolveScopeElement(
 }
 
 /**
- * Resolves the `scope` a registration should carry: an explicit `scope`
- * wins outright, including `null`, and an unset one inherits the closest
- * `ShortcutScope` from context, but only when the registration declares
- * something else. A pure reference, one that supplies nothing beyond
- * `command`, must not contribute a scope declaration of its own. Shared by
- * `ShortcutCommand` and `useShortcutCommand`, which register the same way.
+ * @internal Resolves the `scope` a registration should carry: an explicit
+ * `scope` wins outright, including `null`, and an unset one inherits the
+ * closest `ShortcutScope` from context, but only when the registration
+ * declares something else. A pure reference, one that supplies nothing
+ * beyond `command`, must not contribute a scope declaration of its own.
+ * Shared by `ShortcutCommand` and `useShortcutCommand`, which register the
+ * same way, and by neither outside this package.
  */
 export function resolveCommandScope(
   scope: Core.ShortcutScopeRef | Core.ShortcutScopeRef[] | null | undefined,
@@ -127,23 +128,53 @@ export function useShortcutStoreProps<T extends Core.ShortcutStore>(
 // never reactive state, so createStore's usual state-sync merge would leave
 // them empty. Adopting `store` outright is what makes registration work.
 //
-// A fresh store reads `props.platform` at construction, so an explicit
-// prop there already settles isPlatformExplicit() before anything renders.
-// Adoption skips construction entirely, and the same prop would otherwise
-// reach the store only through a layout effect, too late for a server
-// render to see it. Applying it here instead, once, keeps both paths
-// equally deterministic from the very first render.
+// A fresh store reads every one of these at construction, so an explicit
+// prop, or an explicit answer already settled higher in the chain, settles
+// the equivalent state before anything renders. Adoption skips construction
+// entirely, and the same props would otherwise reach the store only through
+// a layout effect, too late for a server render to see them. Applying them
+// here instead, once, keeps both paths equally deterministic from the very
+// first render.
 function createOrAdoptShortcutStore(
   props: Core.ShortcutStoreProps,
 ): Core.ShortcutStore {
   if (props.store) {
+    const adopted = props.store;
+    const adoptedInternal =
+      adopted as unknown as Core.ShortcutStoreInternalFunctions;
+    const parent = props.parent;
     if (props.platform !== undefined) {
-      props.store.setState("platform", props.platform);
+      adopted.setState("platform", props.platform);
+      adoptedInternal.markPlatformExplicit();
+    } else if (
+      parent &&
+      !adoptedInternal.isPlatformExplicit() &&
       (
-        props.store as unknown as Core.ShortcutStoreInternalFunctions
-      ).markPlatformExplicit();
+        parent as unknown as Core.ShortcutStoreInternalFunctions
+      ).isPlatformExplicit()
+    ) {
+      // The adopted store's own construction never settled `platform`, so
+      // the chain it is landing under, if it already has an explicit
+      // answer, is the deterministic one for a server render to trust; a
+      // store built with its own explicit `platform` keeps that instead,
+      // matching what attachParent's own inheritance later confirms.
+      adopted.setState("platform", parent.getState().platform);
+      adoptedInternal.markPlatformExplicit();
     }
-    return props.store;
+    if (props.enabled !== undefined) adopted.setEnabled(props.enabled);
+    if (props.glyphs !== undefined) adopted.setState("glyphs", props.glyphs);
+    if (props.keyNames !== undefined) {
+      adopted.setState("keyNames", props.keyNames);
+    }
+    if (props.keys !== undefined) {
+      // Not a single setState of the whole map: setKeys also re-indexes
+      // whatever command each entry names, the same reason the sync effect
+      // applies a later change in useShortcutStoreProps the same way.
+      for (const [command, keys] of Object.entries(props.keys)) {
+        adopted.setKeys(command, keys);
+      }
+    }
+    return adopted;
   }
   return Core.createShortcutStore(props);
 }

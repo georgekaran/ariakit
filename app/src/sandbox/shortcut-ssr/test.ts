@@ -8,7 +8,12 @@ import type {
   SsrAdoptedShortcutProps,
   SsrShortcutProps,
 } from "./index.react.tsx";
-import { SsrAdoptedShortcut, SsrShortcut } from "./index.react.tsx";
+import {
+  SsrAdoptedShortcut,
+  SsrNestedAdoptedShortcut,
+  SsrProviderMappedReference,
+  SsrShortcut,
+} from "./index.react.tsx";
 
 /**
  * Renders an element to a static container, asserts the pre-hydration markup,
@@ -172,6 +177,68 @@ test("an explicit provider platform makes an adopted store's SSR deterministic",
       expect(
         container.querySelectorAll("kbd[data-key]").length,
       ).toBeGreaterThan(0);
+    },
+  );
+});
+
+test("an adopted store's provider keys apply on the server", async () => {
+  await renderAndHydrate(
+    createElement<SsrAdoptedShortcutProps>(SsrAdoptedShortcut, {
+      platform: "apple",
+      providerKeys: { save: "mod+J" },
+    }),
+    (container) => {
+      const button = container.querySelector("button");
+      expect(button).toHaveAttribute("aria-keyshortcuts", "Meta+J");
+      expect(
+        container.querySelectorAll("kbd[data-key]").length,
+      ).toBeGreaterThan(0);
+    },
+  );
+});
+
+test("an adopted store under enabled=false emits no aria-keyshortcuts on the server", async () => {
+  await renderAndHydrate(
+    createElement<SsrAdoptedShortcutProps>(SsrAdoptedShortcut, {
+      platform: "apple",
+      enabled: false,
+    }),
+    (container) => {
+      const button = container.querySelector("button");
+      expect(button).not.toHaveAttribute("aria-keyshortcuts");
+    },
+  );
+});
+
+test("an adopted store inherits an explicit parent platform on the server", async () => {
+  await renderAndHydrate(
+    createElement(SsrNestedAdoptedShortcut),
+    (container) => {
+      const button = container.querySelector("button");
+      expect(button).toHaveAttribute("aria-keyshortcuts", "Meta+S");
+      expect(
+        container.querySelectorAll("kbd[data-key]").length,
+      ).toBeGreaterThan(0);
+    },
+  );
+});
+
+test("a provider-mapped reference renders its keys on the server", async () => {
+  await renderAndHydrate(
+    createElement(SsrProviderMappedReference),
+    (container) => {
+      const button = container.querySelector("button");
+      expect(button).toHaveAttribute("aria-keyshortcuts", "Meta+S");
+      expect(
+        container.querySelectorAll("kbd[data-key]").length,
+      ).toBeGreaterThan(0);
+    },
+    async (container) => {
+      const button = container.querySelector("button")!;
+      await act(async () => {
+        await press("s", button, { metaKey: true });
+      });
+      expect(container.querySelector("output")?.textContent).toBe("clicks: 1");
     },
   );
 });

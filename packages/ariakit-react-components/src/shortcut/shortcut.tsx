@@ -151,14 +151,19 @@ export const useShortcut = createHook<TagName, ShortcutOptions>(
       const keyElement = (
         // oxlint-disable-next-line react/no-array-index-key
         <kbd key={key} data-key={key.toLowerCase()}>
-          <span aria-hidden>{getGlyph(key, platform, resolvedGlyphs)}</span>
+          {/* Hidden only when the spoken name beside it stands in for it.
+              With no replacement, the glyph's own text is all assistive
+              technology has, so it stays readable rather than silent. */}
+          <span aria-hidden={spokenName ? true : undefined}>
+            {getGlyph(key, platform, resolvedGlyphs)}
+          </span>
           {spokenName ? <VisuallyHidden>{spokenName}</VisuallyHidden> : null}
         </kbd>
       );
       if (index === 0 || !joinerGlyph) return [keyElement];
-      // Decoration, not a key: no `kbd` or `data-key`, and aria-hidden
-      // like the glyph spans, so a screen reader doesn't read "plus"
-      // between keys, and it can't be mistaken for the literal Plus key.
+      // Decoration, not a key: no `kbd` or `data-key`, and always
+      // aria-hidden, so a screen reader doesn't read "plus" between keys,
+      // and it can't be mistaken for the literal Plus key.
       return [
         <span key={`${key}-joiner`} aria-hidden>
           {joinerGlyph}

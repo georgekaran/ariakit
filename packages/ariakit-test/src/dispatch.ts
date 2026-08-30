@@ -118,13 +118,54 @@ function initUIEventModififiers(
   });
 }
 
+// A US keyboard's physical `code` for each `key` it types directly, covering
+// the punctuation and named keys this codebase's tests exercise. Letters and
+// digits are derived separately below instead of listed here.
+const usKeyboardCodesByKey: Record<string, string> = {
+  Enter: "Enter",
+  Tab: "Tab",
+  Backspace: "Backspace",
+  Delete: "Delete",
+  Escape: "Escape",
+  " ": "Space",
+  ArrowUp: "ArrowUp",
+  ArrowDown: "ArrowDown",
+  ArrowLeft: "ArrowLeft",
+  ArrowRight: "ArrowRight",
+  Home: "Home",
+  End: "End",
+  PageUp: "PageUp",
+  PageDown: "PageDown",
+  ",": "Comma",
+  ".": "Period",
+  "/": "Slash",
+  ";": "Semicolon",
+  "'": "Quote",
+  "[": "BracketLeft",
+  "]": "BracketRight",
+  "\\": "Backslash",
+  "-": "Minus",
+  "=": "Equal",
+  "`": "Backquote",
+};
+
+// Derives the `code` a real US keyboard would report alongside a given
+// `key`, or `undefined` when there's no key to derive from or no key in this
+// table matches it, such as a non-Latin character typed on another layout.
+function getCodeFromKey(key: string | undefined) {
+  if (!key) return undefined;
+  if (/^[a-zA-Z]$/.test(key)) return `Key${key.toUpperCase()}`;
+  if (/^[0-9]$/.test(key)) return `Digit${key}`;
+  return usKeyboardCodesByKey[key];
+}
+
 function initKeyboardEvent(
   event: KeyboardEvent,
   { key, code, location, repeat, isComposing, charCode }: KeyboardEventInit,
 ) {
   assignProps(event, {
     key: sanitizeString(key),
-    code: sanitizeString(code),
+    code: sanitizeString(code ?? getCodeFromKey(key)),
     location: sanitizeNumber(location),
     repeat: !!repeat,
     isComposing: !!isComposing,

@@ -362,6 +362,90 @@ test("a portalled child scope is inside its parent's region", () => {
   popup.remove();
 });
 
+test("a scoped command sees a portalled child scope under a nested provider", () => {
+  const root = createShortcutStore();
+  // A nested level, the way a nested ShortcutProvider creates one. The
+  // React parent/child relationship between the two scopes below holds
+  // regardless: the scope tree composes independently of stores.
+  const nested = createShortcutStore({ parent: root });
+  const outer = document.createElement("div");
+  // Deliberately NOT a DOM descendant of `outer`, the way a portal renders.
+  const popup = document.createElement("div");
+  const input = document.createElement("input");
+  popup.append(input);
+  document.body.append(outer, popup);
+
+  const unregisterParent = root.registerScope({ element: outer });
+  // Registered on the NESTED store, not the root's: this is the part a
+  // per-store registry would miss.
+  const unregisterChild = nested.registerScope({
+    element: popup,
+    parent: outer,
+  });
+
+  const ran: string[] = [];
+  track(
+    root.registerCommand({
+      keys: "Control+K",
+      scope: outer,
+      onTrigger: () => ran.push("scoped"),
+    }),
+  );
+
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  // A store boundary between parent and child scope must not hide the
+  // child from the parent's region.
+  expect(ran).toEqual(["scoped"]);
+
+  unregisterChild();
+  unregisterParent();
+  outer.remove();
+  popup.remove();
+});
+
+test("an explicit element scope still uses plain containment", () => {
+  const store = createShortcutStore();
+  const outer = document.createElement("div");
+  // Never registered through registerScope: nothing links this to `outer`,
+  // so it must not be treated as one of its descendants.
+  const popup = document.createElement("div");
+  const input = document.createElement("input");
+  popup.append(input);
+  document.body.append(outer, popup);
+
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      scope: outer,
+      onTrigger: () => ran.push("scoped"),
+    }),
+  );
+
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  // Only a registerScope call actually links two elements into a region.
+  // An unregistered element stays plain containment, so the popup is
+  // outside `outer`'s scope and the command must not run.
+  expect(ran).toEqual([]);
+
+  outer.remove();
+  popup.remove();
+});
+
 test("a ref that has not resolved leaves the command out of scope", () => {
   const store = createShortcutStore();
   const ran: string[] = [];
@@ -544,6 +628,59 @@ test("a declined key reaches the browser", () => {
   });
   document.body.dispatchEvent(event);
   expect(event.defaultPrevented).toBe(false);
+});
+
+test("the later registration wins across sibling stores", () => {
+  const storeA = createShortcutStore();
+  const storeB = createShortcutStore();
+  const ran: string[] = [];
+
+  // track()ed, not just captured, so a failed assertion below still
+  // unregisters through afterEach instead of leaking a global "Control+K"
+  // handler into every later test in this file.
+  const unregisterA1 = track(
+    storeA.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("a"),
+    }),
+  );
+  const unregisterB1 = track(
+    storeB.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("b"),
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  // B registered after A. Neither scope depth nor store depth breaks the
+  // tie between two sibling root stores, so only registration order can,
+  // and it must be global, not whichever store the dispatcher happens to
+  // visit first.
+  expect(ran).toEqual(["b"]);
+  unregisterA1();
+  unregisterB1();
+
+  ran.length = 0;
+  track(
+    storeB.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("b"),
+    }),
+  );
+  track(
+    storeA.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("a"),
+    }),
+  );
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+  );
+  // Reversed order: A is now the later registration, so the winner must
+  // flip too. A fix that just always favors one particular store, rather
+  // than tracking real registration order, would fail this half.
+  expect(ran).toEqual(["a"]);
 });
 
 test("a deeper scope outranks a shallower one", () => {
@@ -753,6 +890,107 @@ test("Alt+letter fires inside a text field on Windows", () => {
   expect(ran).toEqual(["x"]);
   expect(event.defaultPrevented).toBe(true);
   input.remove();
+});
+
+test("a bare key does not fire from a combobox input with an active descendant", () => {
+  const store = createShortcutStore();
+  const region = document.createElement("div");
+  const option = document.createElement("div");
+  option.id = "option-1";
+  region.append(option);
+  const combobox = document.createElement("input");
+  document.body.append(combobox, region);
+  // track()ed, not just called at the end, so a failed assertion below
+  // still removes these instead of leaking a stray id="option-1" that
+  // would shadow later tests' own getElementById lookups.
+  track(() => combobox.remove());
+  track(() => region.remove());
+  // Real focus stays on the combobox input; only aria-activedescendant
+  // reaches the option, the way a Combobox reports its virtually focused
+  // item.
+  combobox.setAttribute("aria-activedescendant", "option-1");
+  combobox.focus();
+  const ran: string[] = [];
+  track(store.registerCommand({ keys: "K", onTrigger: () => ran.push("x") }));
+  const event = new KeyboardEvent("keydown", {
+    key: "k",
+    bubbles: true,
+    composed: true,
+    cancelable: true,
+  });
+  combobox.dispatchEvent(event);
+  // The keystroke physically lands in the combobox input, whatever its
+  // aria-activedescendant claims: the user is typing, not issuing a
+  // command.
+  expect(ran).toEqual([]);
+  expect(event.defaultPrevented).toBe(false);
+});
+
+test("a chord still fires from a combobox input with an active descendant", () => {
+  const store = createShortcutStore();
+  const region = document.createElement("div");
+  const option = document.createElement("div");
+  option.id = "option-1";
+  region.append(option);
+  const combobox = document.createElement("input");
+  document.body.append(combobox, region);
+  track(() => combobox.remove());
+  track(() => region.remove());
+  combobox.setAttribute("aria-activedescendant", "option-1");
+  combobox.focus();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  const event = new KeyboardEvent("keydown", {
+    key: "k",
+    ctrlKey: true,
+    bubbles: true,
+    composed: true,
+    cancelable: true,
+  });
+  combobox.dispatchEvent(event);
+  // Only a bare printable key is guarded while typing; a chord still fires.
+  expect(ran).toEqual(["x"]);
+  expect(event.defaultPrevented).toBe(true);
+});
+
+test("scope ranking still follows the active descendant", () => {
+  const store = createShortcutStore();
+  const region = document.createElement("div");
+  const option = document.createElement("div");
+  option.id = "option-1";
+  region.append(option);
+  const combobox = document.createElement("input");
+  document.body.append(combobox, region);
+  track(() => combobox.remove());
+  track(() => region.remove());
+  combobox.setAttribute("aria-activedescendant", "option-1");
+  combobox.focus();
+  const ran: string[] = [];
+  track(
+    store.registerCommand({
+      keys: "Control+K",
+      scope: region,
+      onTrigger: () => ran.push("scoped"),
+    }),
+  );
+  combobox.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  // The combobox input itself sits outside `region`; only the
+  // active-descendant-resolved option is inside it. Scope ranking must
+  // still follow that, even though the isTextbox guard now uses the
+  // physical origin.
+  expect(ran).toEqual(["scoped"]);
 });
 
 test("the second lookup key runs when the first matches nothing", () => {
@@ -1106,6 +1344,30 @@ test("detaching restores descendant depths", () => {
   // stuck at what `inner` inherited while `outer` was attached would wrongly
   // let it outrank `competitor` here.
   expect(ran).toEqual(["competitor"]);
+});
+
+/* ---------------------------------------------------------------------- *
+ * store adoption — createShortcutStore({ store }) adopts an existing
+ * store outright, rather than syncing reactive state onto a fresh,
+ * separately-registered one.
+ * ---------------------------------------------------------------------- */
+
+test("adopting a store shares its registry, not just its state", () => {
+  const source = createShortcutStore();
+  const ran: string[] = [];
+  track(
+    source.registerCommand({
+      command: "save",
+      keys: "Control+S",
+      onTrigger: () => ran.push("x"),
+    }),
+  );
+  const adopted = createShortcutStore({ store: source });
+  // Registered before adoption, on the source store: the adopted store
+  // must still see it, both by name and through the keyboard.
+  expect(adopted.getKeys("save")).toEqual(["Control+S"]);
+  expect(adopted.trigger("save")).toBe(true);
+  expect(ran).toEqual(["x"]);
 });
 
 /* ---------------------------------------------------------------------- *

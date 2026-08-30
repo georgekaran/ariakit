@@ -106,3 +106,38 @@ test("type marks the text field that receives text after focus moves", async () 
   expect(onFirstInputChange).not.toHaveBeenCalled();
   expect(onSecondInputChange).toHaveBeenCalledOnce();
 });
+
+test("a modified printable key does not insert text", async () => {
+  const input = createInput();
+  const onChange = trackChange(input);
+
+  await type("k", input, { metaKey: true });
+  await blur(input);
+
+  expect(input.value).toBe("");
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+test("a ctrlKey-modified printable key does not insert text", async () => {
+  const input = createInput();
+
+  await type("k", input, { ctrlKey: true });
+
+  expect(input.value).toBe("");
+});
+
+test("an altKey-modified printable key still inserts text", async () => {
+  const input = createInput();
+
+  await type("l", input, { altKey: true });
+
+  expect(input.value).toBe("l");
+});
+
+test("a shiftKey-modified printable key still inserts text", async () => {
+  const input = createInput();
+
+  await type("A", input, { shiftKey: true });
+
+  expect(input.value).toBe("A");
+});

@@ -176,6 +176,7 @@ export interface ShortcutCommandOptions {
 }
 
 interface Registration {
+  /** Monotonic across every store in the process; see nextRegistrationId. */
   id: number;
   command?: string;
   keys?: string | null;
@@ -270,12 +271,17 @@ export interface ShortcutStoreProps extends StoreProps<ShortcutStoreState> {
   /** The enclosing level. A PLAIN PROPERTY, never the `stores` argument. */
   parent?: ShortcutStore;
   /**
-   * An existing shortcut store. Narrower than the generic `store` prop
-   * every other Ariakit store takes (`Store<Partial<S>>`): a shortcut
-   * store's registrations, key index and scope tree are private closures
-   * outside its reactive state, so a framework binding built on this
-   * function needs the concrete type to adopt one outright, registry
-   * included, rather than only keeping state in sync with a second one.
+   * An existing shortcut store to adopt outright. Narrower than the
+   * generic `store` prop every other Ariakit store takes
+   * (`Store<Partial<S>>`): a shortcut store's registrations, key index and
+   * scope tree are private closures outside its reactive state, so syncing
+   * state alone would leave them empty on whatever this returned instead.
+   * Adoption returns `store` itself, so `getKeys`, `trigger` and dispatch
+   * all see whatever is already registered on it. `enabled`, `platform`,
+   * `glyphs`, `keyNames` and `keys`, when given here, are applied onto it
+   * as overrides; `parent` is not, since the returned store already has
+   * whatever chain it was built with. `attachParent` (see
+   * `ShortcutStoreInternalFunctions`) joins one to a chain afterward.
    */
   store?: ShortcutStore;
 }
@@ -378,6 +384,22 @@ export interface ShortcutStoreInternalFunctions {
    * store.getAvailability("save"); // { enabled: true, inScope: true }
    */
   getAvailability: (command: string) => ShortcutAvailability;
+  /**
+   * Whether a `scope` option's region currently contains focus, resolved
+   * through the scope registry exactly like `getAvailability`'s own
+   * `inScope` and dispatch's own ranking: a portalled descendant of a
+   * registered `ShortcutScope` counts as inside its region even though it
+   * is not a DOM descendant. `null` or `undefined` both mean no region,
+   * which is always in scope. A framework binding's own rendered
+   * `inScope` calls this directly for a scope that has no merged command
+   * to read `getAvailability` from yet, so it never disagrees with
+   * dispatch about the same scope value.
+   * @example
+   * store.isScopeFocused(ref); // true
+   */
+  isScopeFocused: (
+    scope: ShortcutScopeRef | ShortcutScopeRef[] | null | undefined,
+  ) => boolean;
   /**
    * A command's raw declared `keys`, by name: whatever `getKeys` resolves
    * for the platform, one step earlier, after any `setKeys` override but
@@ -576,12 +598,15 @@ function resolveActiveDescendant(element: Element): Element {
   return descendant ?? element;
 }
 
-function resolveFocusOrigin(event: KeyboardEvent): Element | null {
+// Where the keystroke is physically landing: composedPath()[0], never
+// following aria-activedescendant. A combobox input stays the input no
+// matter what it claims is virtually focused, which is what the isTextbox
+// guard and the recording guard both need to stay accurate about.
+function resolvePhysicalOrigin(event: KeyboardEvent): Element | null {
   const composed =
     typeof event.composedPath === "function" ? event.composedPath() : null;
   const origin: EventTarget | null = composed?.[0] ?? event.target;
-  if (!isElement(origin)) return null;
-  return resolveActiveDescendant(origin);
+  return isElement(origin) ? origin : null;
 }
 
 /**
@@ -603,8 +628,9 @@ export function resolveActiveElement(): Element | null {
   return active;
 }
 
-// The activeElement analog of `resolveFocusOrigin`, for a caller with no
-// event to read `composedPath` from.
+// The activeElement analog of resolvePhysicalOrigin plus
+// resolveActiveDescendant, for a caller with no event to read
+// `composedPath` from.
 function resolveActiveElementOrigin(): Element | null {
   const active = resolveActiveElement();
   if (!active) return null;
@@ -912,17 +938,21 @@ interface ClaimResult {
  * `seen` is the whole event's once-per-command guard, not just this lookup
  * key's: the caller threads the SAME set through the primary and secondary
  * calls, so a command already declined under one lookup key is not offered
- * again under the other.
+ * again under the other. `origin` and `physicalOrigin` can differ under a
+ * virtual-focus widget: `origin` (aria-activedescendant followed) ranks
+ * scope, `physicalOrigin` (composedPath()[0] only) decides whether this is
+ * typing.
  */
 function runForLookupKey(
   dispatcher: DocumentDispatcher,
   lookupKey: string,
   origin: Element,
+  physicalOrigin: Element,
   path: readonly Element[],
   originalEvent: KeyboardEvent,
   seen: Set<string>,
 ): ClaimResult | null {
-  const originIsTextbox = isTextbox(origin as HTMLElement);
+  const originIsTextbox = isTextbox(physicalOrigin as HTMLElement);
 
   const candidates: Candidate[] = [];
   for (const store of dispatcher.stores) {
@@ -986,7 +1016,7 @@ function runForLookupKey(
     (a, b) =>
       a.scopeDepth - b.scopeDepth || // ASC: lower index = deeper = first
       storeDepth(b.store) - storeDepth(a.store) || // DESC: deeper store level first
-      b.id - a.id, // DESC: last registered first
+      b.id - a.id, // DESC: last registered first, across every store
   );
 
   // Run in rank order, each command name at most once per event.
@@ -1040,13 +1070,17 @@ function handleKeyDown(dispatcher: DocumentDispatcher, event: KeyboardEvent) {
   const lookup = getEventLookupKeys(event);
   if (!lookup) return;
 
-  const origin = resolveFocusOrigin(event);
-  if (!origin) return;
+  const physicalOrigin = resolvePhysicalOrigin(event);
+  if (!physicalOrigin) return;
 
   // A ShortcutInput marks itself while recording. The dispatcher runs in
   // the capture phase, so no amount of stopPropagation from the input's own
-  // handler reaches it.
-  if (origin.closest("[data-shortcut-recording]")) return;
+  // handler reaches it. Physical, like the isTextbox guard below: what
+  // matters is where the keystroke actually lands, not what an
+  // aria-activedescendant elsewhere claims.
+  if (physicalOrigin.closest("[data-shortcut-recording]")) return;
+
+  const origin = resolveActiveDescendant(physicalOrigin);
 
   // A virtual-focus Combobox produces two document-level keydowns per
   // physical press, and the second is a new event object. Deliberately not
@@ -1080,6 +1114,7 @@ function handleKeyDown(dispatcher: DocumentDispatcher, event: KeyboardEvent) {
     dispatcher,
     lookup.primary,
     origin,
+    physicalOrigin,
     path,
     event,
     seen,
@@ -1089,6 +1124,7 @@ function handleKeyDown(dispatcher: DocumentDispatcher, event: KeyboardEvent) {
       dispatcher,
       lookup.secondary,
       origin,
+      physicalOrigin,
       path,
       event,
       seen,
@@ -1106,6 +1142,16 @@ function handleKeyDown(dispatcher: DocumentDispatcher, event: KeyboardEvent) {
 }
 
 let nextStoreUid = 0;
+// Shared by every store in the process, not just one: the dispatcher's
+// final tie-break (see runForLookupKey) needs "registered later" to mean
+// the same thing across sibling stores, not just within one.
+let nextRegistrationId = 0;
+// Shared by every store in the process, not just one: the scope tree
+// composes independently of stores, through the React parent/child
+// handles ShortcutScope registers with, so a scope nested under a
+// different level than its parent's, through a nested provider, must
+// still be found as that parent's child.
+const globalScopeRegistry = new Set<ScopeRecord>();
 
 /**
  * Creates a shortcut store.
@@ -1129,6 +1175,34 @@ let nextStoreUid = 0;
 export function createShortcutStore(
   props: ShortcutStoreProps = {},
 ): ShortcutStore {
+  // Adoption returns `store` itself: its registrations, key index and
+  // scope tree are private closures that a reactive-state sync alone
+  // cannot reach, so anything short of the same object would leave them
+  // empty on whatever this returned instead. `parent` is deliberately not
+  // applied here; attachParent (see ShortcutStoreInternalFunctions) is the
+  // documented way to join an adopted store to a chain afterward.
+  if (props.store) {
+    const adopted = asInternal(props.store);
+    if (props.enabled !== undefined) adopted.setEnabled(props.enabled);
+    if (props.platform !== undefined) {
+      adopted.setState("platform", props.platform);
+      adopted.markPlatformExplicit();
+    }
+    if (props.glyphs !== undefined) adopted.setState("glyphs", props.glyphs);
+    if (props.keyNames !== undefined) {
+      adopted.setState("keyNames", props.keyNames);
+    }
+    if (props.keys !== undefined) {
+      // Not a single setState of the whole map: setKeys also re-indexes
+      // whatever command each entry names, which a plain state write would
+      // skip, leaving dispatch keyed off the old shortcuts.
+      for (const [command, keys] of Object.entries(props.keys)) {
+        adopted.setKeys(command, keys);
+      }
+    }
+    return adopted;
+  }
+
   // The level captured once at construction, from `props.parent`. Renamed
   // from `parent` because `attachParent` below adds a second, swappable
   // one: `enabled`, and the platform/glyphs/keyNames sync, prefer that one
@@ -1159,10 +1233,7 @@ export function createShortcutStore(
     props.platform !== undefined ||
     (fixedParent?.isPlatformExplicit() ?? false);
 
-  // Omit an undefined parent so createStore keeps its zero-parent fast path.
-  const shortcut = props.store
-    ? createStore(initialState, props.store)
-    : createStore(initialState);
+  const shortcut = createStore(initialState);
 
   // The chain currently backing `enabled`: whatever `attachParent` last
   // attached, else the fixed one from construction, else no chain at all.
@@ -1188,9 +1259,9 @@ export function createShortcutStore(
   const keyIndex = new Map<string, Set<number>>();
   const nameIndex = new Map<string, Set<number>>();
   const mergedCache = new Map<string, MergedCommand>();
-  const scopeRegistry = new Set<ScopeRecord>();
+  // Shared, not fresh per store: see globalScopeRegistry.
+  const scopeRegistry = globalScopeRegistry;
   const documentRefs = new Map<Document, number>();
-  let nextId = 0;
 
   // Separate from `shortcut`: registerCommand mutates the registry outside
   // reactive state, so getKeys/getAvailability have nothing there to
@@ -1224,6 +1295,7 @@ export function createShortcutStore(
     trigger,
     runOnTrigger,
     getAvailability,
+    isScopeFocused: isDeclaredScopeFocused,
     isPlatformExplicit,
     markPlatformExplicit,
     attach,
@@ -1293,7 +1365,7 @@ export function createShortcutStore(
     if (options.store && options.store !== store) {
       return asInternal(options.store).registerCommand(options);
     }
-    const id = nextId++;
+    const id = nextRegistrationId++;
     const registration: Registration = {
       id,
       command: options.command,

@@ -57,6 +57,13 @@ export interface SsrAdoptedShortcutProps {
    * behaves like `SsrShortcut` with no `platform`.
    */
   platform?: "apple" | "windows" | "other";
+  /**
+   * The provider's remapping, applied to the adopted store the same way
+   * `SsrShortcutProps.providerKeys` is applied to a freshly created one.
+   */
+  providerKeys?: Record<string, string | null>;
+  /** The provider's own `enabled`, applied to the adopted store. */
+  enabled?: boolean;
 }
 
 /**
@@ -64,13 +71,62 @@ export interface SsrAdoptedShortcutProps {
  * provider states it. Proves an adopted store's SSR output is just as
  * deterministic as a freshly created one's.
  */
-export function SsrAdoptedShortcut({ platform }: SsrAdoptedShortcutProps = {}) {
+export function SsrAdoptedShortcut({
+  platform,
+  providerKeys,
+  enabled,
+}: SsrAdoptedShortcutProps = {}) {
   const store = useShortcutStore();
   return (
-    <ShortcutProvider store={store} platform={platform}>
+    <ShortcutProvider
+      store={store}
+      platform={platform}
+      keys={providerKeys}
+      enabled={enabled}
+    >
       <ShortcutCommand command="save" keys="mod+S">
         Save <Shortcut />
       </ShortcutCommand>
+    </ShortcutProvider>
+  );
+}
+
+/**
+ * Nests an adopted store under an outer provider that states `platform`
+ * explicitly, while the provider adopting it states none of its own.
+ * Proves the inner level's SSR output inherits the outer's platform instead
+ * of falling back to the server's unknowable guess.
+ */
+export function SsrNestedAdoptedShortcut() {
+  const store = useShortcutStore();
+  return (
+    <ShortcutProvider platform="apple">
+      <ShortcutProvider store={store}>
+        <ShortcutCommand command="save" keys="mod+S">
+          Save <Shortcut />
+        </ShortcutCommand>
+      </ShortcutProvider>
+    </ShortcutProvider>
+  );
+}
+
+/**
+ * A pure reference: it names `command` but declares no `keys` of its own,
+ * so its binding comes entirely from the provider's override map, with no
+ * separate declaration anywhere. Proves it can render deterministically
+ * before its own registration lands, the same as a declaration would.
+ */
+export function SsrProviderMappedReference() {
+  const [clicks, setClicks] = useState(0);
+  return (
+    <ShortcutProvider platform="apple" keys={{ save: "mod+S" }}>
+      <ShortcutCommand
+        command="save"
+        onClick={() => setClicks((clicks) => clicks + 1)}
+      >
+        Save <Shortcut />
+      </ShortcutCommand>
+      <output>clicks: {clicks}</output>
     </ShortcutProvider>
   );
 }
